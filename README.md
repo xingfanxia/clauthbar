@@ -33,6 +33,14 @@ with its plan tier, a 5h usage bar, and (for fallback-chain members) an
 `⚡ #position @threshold` armed hint. Click an account to switch; "Refresh now"
 forces a re-fetch; "Quit" exits.
 
+## Build a real app
+
+```sh
+Scripts/package_app.sh        # → build/clauthbar.app (LSUIElement, ad-hoc signed)
+open build/clauthbar.app      # run it, or:
+cp -R build/clauthbar.app /Applications/   # then add to System Settings → Login Items
+```
+
 ## Status (MVP)
 
 Implemented (Phase S1–S3, S5–S6 of `clauth/docs/clauthbar/DESIGN.md`):
@@ -48,7 +56,9 @@ Deferred:
 - **S4** — the polished hosted-SwiftUI card (real `Canvas` usage bars via
   `NSHostingView` + `intrinsicContentSize`). The MVP draws bars with block
   characters in native menu items instead.
-- **S7** — Settings window, Sparkle auto-update, `.app` bundling + Homebrew cask.
+- **S7 (partial)** — `.app` bundling done (`Scripts/package_app.sh`, ad-hoc
+  signed). Still deferred: Settings window, Sparkle auto-update, Developer-ID
+  signing + notarization, Homebrew cask.
 - 7d / per-model windows, `Add Account…` (→ `clauth login`), custom meter glyph.
 
 ## Architecture
