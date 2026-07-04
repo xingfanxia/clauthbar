@@ -23,13 +23,26 @@ enum Theme {
         return accent
     }
 
+    /// Parse an ISO-8601 timestamp as the daemon writes it. `resets_at` carries
+    /// microseconds (`…T14:19:59.519183+00:00`), which the plain
+    /// `.withInternetDateTime` parser rejects — try fractional first, then plain,
+    /// then strip the sub-second digits (`.withFractionalSeconds` only promises
+    /// milliseconds, not the daemon's 6 digits).
+    static func parseISO(_ iso: String) -> Date? {
+        let parser = ISO8601DateFormatter()
+        parser.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let d = parser.date(from: iso) { return d }
+        parser.formatOptions = [.withInternetDateTime]
+        if let d = parser.date(from: iso) { return d }
+        let stripped = iso.replacingOccurrences(of: #"\.\d+"#, with: "", options: .regularExpression)
+        return parser.date(from: stripped)
+    }
+
     /// Compact "resets in" hint from an ISO-8601 timestamp — `resets in 5d 16h`,
     /// `resets in 3h 20m`, `resets in 12m`, or nil when absent or already past.
     /// Two units max, coarsest first (weekly windows read in days, not "136h").
     static func resetHint(_ iso: String?) -> String? {
-        let parser = ISO8601DateFormatter()
-        parser.formatOptions = [.withInternetDateTime]
-        guard let iso, let date = parser.date(from: iso) else { return nil }
+        guard let iso, let date = parseISO(iso) else { return nil }
         let secs = Int(date.timeIntervalSinceNow)
         guard secs > 0 else { return nil }
         let d = secs / 86_400

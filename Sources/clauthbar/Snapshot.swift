@@ -24,9 +24,9 @@ enum Snapshot {
           "auto_start": false, "bell_threshold": null,
           "fallback": {"position": 1, "threshold": 95, "armed": true},
           "windows": [
-            {"label": "5h", "utilization_pct": 42, "resets_at": "2026-07-04T20:00:00+00:00"},
-            {"label": "7d", "utilization_pct": 78, "resets_at": "2026-07-10T00:00:00+00:00"},
-            {"label": "7d fable", "utilization_pct": 12, "resets_at": "2026-07-10T00:00:00+00:00"}
+            {"label": "5h", "utilization_pct": 42, "resets_at": "2026-07-04T20:00:00.519183+00:00"},
+            {"label": "7d", "utilization_pct": 78, "resets_at": "2026-07-10T00:00:00.519205+00:00"},
+            {"label": "7d fable", "utilization_pct": 12, "resets_at": "2026-07-10T00:00:00.519205+00:00"}
           ],
           "third_party": null
         },
@@ -36,7 +36,7 @@ enum Snapshot {
           "fetched_at": null, "next_refresh_at": null, "auto_start": false, "bell_threshold": null,
           "fallback": {"position": 2, "threshold": 95, "armed": false},
           "windows": [
-            {"label": "5h", "utilization_pct": 8, "resets_at": "2026-07-04T18:00:00+00:00"},
+            {"label": "5h", "utilization_pct": 8, "resets_at": "2026-07-04T18:00:00.100000+00:00"},
             {"label": "7d", "utilization_pct": 31, "resets_at": null},
             {"label": "7d fable", "utilization_pct": 0, "resets_at": null}
           ],
