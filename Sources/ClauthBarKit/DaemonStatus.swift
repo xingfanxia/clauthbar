@@ -100,9 +100,14 @@ struct ProfileStatus: Codable, Sendable, Identifiable {
     let fallback: FallbackInfo?
     let windows: [UsageWindow]
     let thirdParty: ThirdPartyInfo?
+    /// AUTH-2 per-profile auth status: "ok" | "expiring" | "broken"; absent = ok
+    /// (older daemons). Drives the forecast engine's auth-broken skip (AUTH-1) and
+    /// the red auth badge — a revoked login must never be a rotation target.
+    let authStatus: String?
 
     enum CodingKeys: String, CodingKey {
         case name, active, provider, tier, fallback, windows
+        case authStatus = "auth_status"
         case baseUrl = "base_url"
         case hasLiveSession = "has_live_session"
         case fetchStatus = "fetch_status"
@@ -132,6 +137,7 @@ struct ProfileStatus: Codable, Sendable, Identifiable {
         fallback = try c.decodeIfPresent(FallbackInfo.self, forKey: .fallback)
         windows = try c.decodeIfPresent([UsageWindow].self, forKey: .windows) ?? []
         thirdParty = try c.decodeIfPresent(ThirdPartyInfo.self, forKey: .thirdParty)
+        authStatus = try c.decodeIfPresent(String.self, forKey: .authStatus)
     }
 
     /// The window with the given label (`"5h"`, `"7d"`, `"7d fable"`), or nil.
@@ -158,6 +164,10 @@ struct ProfileStatus: Codable, Sendable, Identifiable {
 
     /// Freshness cue: numbers are trustworthy only on a live ("Fresh") read.
     var isStale: Bool { fetchStatus != nil && fetchStatus != "Fresh" }
+
+    /// AUTH-1: a revoked/dead login the daemon must never rotate into (forecast
+    /// engine skips it like an exhausted member).
+    var authBroken: Bool { authStatus == "broken" }
 }
 
 struct FallbackInfo: Codable, Sendable {

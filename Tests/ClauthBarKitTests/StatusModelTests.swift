@@ -37,24 +37,7 @@ final class StatusModelTests: XCTestCase {
         XCTAssertEqual(model.orderedProfiles.map(\.name), ["a", "b"])
     }
 
-    // MARK: isStale — fresh within a few ticks, stale past max(3×interval, 15s).
-
-    func testFreshWithinThreshold() {
-        // 90s interval → stale after 270s. 100s old is fresh.
-        XCTAssertFalse(StatusModel.isStale(ageSeconds: 100, refreshIntervalMs: 90_000))
-    }
-
-    func testStalePastThreeIntervals() {
-        // 90s interval → strict `>` at the 270s boundary: 270 fresh, 271 stale.
-        XCTAssertFalse(StatusModel.isStale(ageSeconds: 270, refreshIntervalMs: 90_000))
-        XCTAssertTrue(StatusModel.isStale(ageSeconds: 271, refreshIntervalMs: 90_000))
-    }
-
-    func testFifteenSecondFloorForTinyIntervals() {
-        // 1s interval → 3× = 3s, floored to 15s. 10s old is still fresh; 20s stale.
-        XCTAssertFalse(StatusModel.isStale(ageSeconds: 10, refreshIntervalMs: 1_000))
-        XCTAssertTrue(StatusModel.isStale(ageSeconds: 20, refreshIntervalMs: 1_000))
-    }
+    // (staleness threshold moved to LivenessLadder — see LivenessLadderTests.)
 
     // MARK: isHealthy reflects liveness (dims the menu-bar glyph when not .ok).
 

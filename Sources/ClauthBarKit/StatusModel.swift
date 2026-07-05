@@ -76,7 +76,7 @@ final class StatusModel: ObservableObject {
         // age grows with wall-clock even though the bytes don't).
         let mtime = DaemonClient.statusMtime()
         if let mtime, mtime == lastMtime, let s = status {
-            let next = Self.staleness(of: s)
+            let next = Self.staleness(of: s, mtime: mtime)
             if next != liveness { liveness = next }
             return
         }
@@ -85,7 +85,7 @@ final class StatusModel: ObservableObject {
         switch DaemonClient.readStatus() {
         case .ok(let s):
             status = s
-            liveness = Self.staleness(of: s)
+            liveness = Self.staleness(of: s, mtime: mtime)
             maybeNotify(s)
         case .schemaUnsupported(let n):
             // Distinct from "down": the daemon IS writing, we just can't read its
@@ -99,24 +99,25 @@ final class StatusModel: ObservableObject {
     }
 
     /// A daemon that dies AFTER writing status.json freezes the file `Fresh`; the
-    /// only truth is `generated_at` age. Stale once older than 3× the refresh
-    /// interval (floored at 15s) — the daemon rewrites every 1s tick, so that gap
-    /// means it stopped ticking.
-    private static func staleness(of s: DaemonStatus) -> Liveness {
-        guard let written = Theme.parseISO(s.generatedAt) else { return .ok }
-        let age = Date().timeIntervalSince(written)
-        guard isStale(ageSeconds: age, refreshIntervalMs: s.refreshIntervalMs) else { return .ok }
-        let f = DateFormatter()
-        f.dateFormat = "HH:mm"
-        return .stalled(since: f.string(from: written))
-    }
-
-    /// Pure staleness predicate (the finding-prone threshold, split from the clock
-    /// read so it is deterministically testable). Stale once `age` exceeds
-    /// `max(3× the refresh interval, 15s)` — the daemon rewrites status.json every
-    /// 1s tick, so a larger gap means it stopped ticking.
-    nonisolated static func isStale(ageSeconds: Double, refreshIntervalMs: Int) -> Bool {
-        ageSeconds > max(3 * Double(refreshIntervalMs) / 1000, 15)
+    /// only truth is age. Maps the graded `LivenessLadder` (CBAR4-2) onto the panel
+    /// Liveness: `.dead` (≥15s of no ticking) → `.stalled`; `.live`/`.syncing`
+    /// (<15s) → `.ok`, so a momentary stall shows the last-known content, not the
+    /// red banner. The 15s threshold is keyed to the 1s write cadence — NOT
+    /// `refresh_interval_ms` (the ~90s refetch), which let a dead daemon read fresh
+    /// for minutes before this fix.
+    private static func staleness(of s: DaemonStatus, mtime: Date?) -> Liveness {
+        let now = Date()
+        let genAge = Theme.parseISO(s.generatedAt).map { now.timeIntervalSince($0) }
+        let mtimeAge = mtime.map { now.timeIntervalSince($0) }
+        switch LivenessLadder.freshness(generatedAtAge: genAge, statusMtimeAge: mtimeAge) {
+        case .live, .syncing:
+            return .ok
+        case .dead:
+            let f = DateFormatter()
+            f.dateFormat = "HH:mm"
+            let written = Theme.parseISO(s.generatedAt) ?? now
+            return .stalled(since: f.string(from: written))
+        }
     }
 
     /// Post a local notification for the events worth learning about while away
