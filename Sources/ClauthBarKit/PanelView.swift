@@ -35,6 +35,12 @@ struct PanelView: View {
         if let error = model.lastCommandError {
             commandErrorBanner(error)
         }
+        // The armed-member removal confirm (§7) floats at the panel top so it's
+        // visible from BOTH the context menu and the disclosure minus button,
+        // without forcing the editor open.
+        if let prompt = model.pendingRemovalPrompt {
+            removalConfirmBanner(prompt)
+        }
         StatusStrip(model: model)
         Divider().padding(.horizontal, 12)
         accounts(status, dead: dead)
@@ -61,7 +67,9 @@ struct PanelView: View {
                 .padding(.horizontal, 16).padding(.top, 4)
             let rows = ForEach(model.listProfiles) { p in
                 AccountRow(
+                    model: model,
                     p: p,
+                    status: status,
                     inspected: model.isInspected(p.name),
                     dead: dead,
                     frozenStamp: dead ? "as of \(model.frozenAge)" : nil,
@@ -106,9 +114,7 @@ struct PanelView: View {
                 Text("None — add accounts in Configure").font(.footnote).foregroundStyle(.secondary)
             } else {
                 ChainStrip(status: status)
-                Text(status.wrapOff
-                     ? "when spent: switch everything off"
-                     : "when spent: stay on last account")
+                Text(ChainEdit.whenSpentSummary(wrapOff: status.wrapOff))
                     .font(.caption).foregroundStyle(.tertiary)
             }
             if let skew = model.versionSkew {
@@ -142,6 +148,22 @@ struct PanelView: View {
                 .help("The clauth daemon keeps running — auto-switch continues.")
         }
         .padding(.horizontal, 8)
+    }
+
+    // MARK: - Armed-member removal confirm (§7)
+
+    private func removalConfirmBanner(_ prompt: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Theme.warning)
+            Text(prompt).font(.subheadline).fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 4)
+            // Cancel is pure local state — never gated on daemon reachability.
+            Button("Cancel") { model.cancelRemoval() }.controlSize(.small)
+            Button("Remove") { model.confirmRemoval() }.controlSize(.small).tint(Theme.danger)
+        }
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .background(Theme.warning.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+        .padding(.horizontal, 12).padding(.bottom, 6)
     }
 
     // MARK: - Config-command error banner (TECH-11)

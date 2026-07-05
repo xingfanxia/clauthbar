@@ -24,7 +24,8 @@ enum Snapshot {
     /// print the resolved state to stderr so the logic is verifiable without eyeballing
     /// the PNG. Canonical: `default` (inspection on active), `inspecting` (a non-active
     /// row inspected), `mid-switch` (pending), `daemon-dead` (frozen banner + dim).
-    /// Legacy: `healthy`/`stale`/`schema2`/`skew`.
+    /// `config` opens the expanded Configure disclosure (§7). Legacy:
+    /// `healthy`/`stale`/`schema2`/`skew`.
     @MainActor
     static func render(variant: String, to path: String) {
         guard let data = Fixtures.statusJSONData(),
@@ -39,6 +40,8 @@ enum Snapshot {
         let (status, liveness, inspected, phase): (DaemonStatus?, StatusModel.Liveness, String?, SwitchMachine.Phase) = {
             switch variant {
             case "inspecting": return (mock, .ok, nonActive, .idle)
+            case "config": return (mock, .ok, nil, .idle)
+            case "remove-confirm": return (mock, .ok, nil, .idle)
             case "mid-switch": return (mock, .ok, nonActive, .pending(target: nonActive))
             case "daemon-dead", "dead", "stale": return (mock, .stalled(since: "05:00"), nil, .idle)
             case "schema2": return (nil, .outOfDate(schema: 2), nil, .idle)
@@ -54,6 +57,12 @@ enum Snapshot {
         case .down: resolved = "down"
         }
         let model = StatusModel(preview: status, liveness: liveness, inspected: inspected, phase: phase)
+        if variant == "config" { model.showConfig = true }
+        // Panel-level armed-member removal confirm (§7): arm it on the first armed
+        // chain member so the banner renders.
+        if variant == "remove-confirm" {
+            model.pendingRemoval = mock.profiles.first { $0.fallback?.armed == true }?.name
+        }
         let skewNote = model.versionSkew.map { " skew=\($0)" } ?? ""
         let phaseNote = phase == .idle ? "" : " phase=\(phase)"
         let inspectNote = inspected.map { " inspected=\($0)" } ?? ""

@@ -5,7 +5,9 @@ import SwiftUI
 /// view state, zero daemon traffic). In the dead state rows dim to 60%, bars go
 /// greyscale, and every stamp becomes "as of Xm ago".
 struct AccountRow: View {
+    @ObservedObject var model: StatusModel
     let p: ProfileStatus
+    let status: DaemonStatus
     let inspected: Bool
     let dead: Bool
     let frozenStamp: String? // "as of 4m ago" when dead, else nil
@@ -32,6 +34,7 @@ struct AccountRow: View {
         )
         .contentShape(Rectangle())
         .onTapGesture(perform: onInspect)
+        .contextMenu { AccountContextMenu(model: model, p: p, status: status) }
         .opacity(dead ? 0.6 : 1)
         .help("\(p.name) · \(p.tier ?? p.provider) — click to inspect")
         .accessibilityElement(children: .combine)

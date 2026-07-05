@@ -36,10 +36,22 @@ final class StatusModel: ObservableObject {
     /// feature's only in-panel proof it fired.
     @Published private(set) var rotationFlash: String?
     @Published var showConfig = false
+    /// The chain member awaiting the inline removal confirm (CBAR4-5 §7 — removing
+    /// an ARMED member requires an explicit "remove anyway?"). `nil` ⇒ no confirm
+    /// pending. Copy comes from `ChainEdit.removalConsequence`.
+    @Published var pendingRemoval: String?
+    /// Count of config socket round-trips in flight (CBAR4-5 §7 pending shimmer) —
+    /// the disclosure shows an honest "Applying…" while > 0. Cleared as each
+    /// command's reply lands (the settle ladder then updates the view).
+    @Published private(set) var configInFlight = 0
 
     /// A switch is in flight (arming or pending) — tiles disable to block a second
     /// concurrent switch (M5/TECH-11), now derived from the phase.
     var switchInFlight: Bool { switchPhase.isBusy }
+
+    /// A config command's socket round-trip is in flight — drives the pending
+    /// shimmer (§7).
+    var configBusy: Bool { configInFlight > 0 }
 
     /// The clauth version this clauthbar build targets. A daemon reporting a
     /// different `clauth_version` raises a SOFT skew badge (informational — the
@@ -478,7 +490,39 @@ final class StatusModel: ObservableObject {
     func fallbackMove(_ name: String, up: Bool) { run { DaemonClient.fallbackMove(name, up: up) } }
     func setThreshold(_ name: String, _ value: Int) { run { DaemonClient.setThreshold(name, value) } }
     func setWrapOff(_ on: Bool) { run { DaemonClient.setWrapOff(on) } }
-    func refresh() { run { DaemonClient.refresh(nil) } }
+    // Refreshes are usage re-fetches, not config edits — no "Applying…" shimmer.
+    // (Explicit `work:`-position arg, not a trailing closure, so it can't bind to
+    // the optional `expecting` closure param instead.)
+    func refresh() { run({ DaemonClient.refresh(nil) }, shimmer: false) }
+    /// Force a usage re-fetch for one account (context-menu "Refresh <name>", §7).
+    func refresh(_ name: String) { run({ DaemonClient.refresh(name) }, shimmer: false) }
+
+    // MARK: - Chain removal with the armed-member confirm (CBAR4-5 §7)
+
+    /// Remove `name` from the chain, but if it's an ARMED member first raise the
+    /// inline confirm (a removal that stops auto-switch must be deliberate). Both the
+    /// context menu and the disclosure route removals through here.
+    func requestRemove(_ name: String) {
+        guard let s = status, ChainEdit.removalConsequence(of: name, in: s) != nil else {
+            fallbackRemove(name)
+            return
+        }
+        pendingRemoval = name
+    }
+
+    /// The confirm copy for the pending removal, or nil when none is pending.
+    var pendingRemovalPrompt: String? {
+        guard let name = pendingRemoval, let s = status else { return nil }
+        return ChainEdit.removalConsequence(of: name, in: s)?.prompt
+    }
+
+    func confirmRemoval() {
+        guard let name = pendingRemoval else { return }
+        pendingRemoval = nil
+        fallbackRemove(name)
+    }
+
+    func cancelRemoval() { pendingRemoval = nil }
 
     /// Run a command's blocking socket I/O OFF the main actor (TECH-10 #25 — a
     /// switch parks the socket ~2s while the daemon holds its config lock across a
@@ -487,11 +531,14 @@ final class StatusModel: ObservableObject {
     /// so the panel reflects the change (TECH-11). Call sites stay synchronous.
     private func run(
         _ work: @escaping @Sendable () -> CommandOutcome,
+        shimmer: Bool = true,
         expecting predicate: (@Sendable (DaemonStatus) -> Bool)? = nil
     ) {
+        if shimmer { configInFlight += 1 }
         Task { [weak self] in
             let outcome = await Task.detached(operation: work).value
             guard let self else { return }
+            if shimmer { self.configInFlight = max(0, self.configInFlight - 1) }
             self.handle(outcome, expecting: predicate)
         }
     }
