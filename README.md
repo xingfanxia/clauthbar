@@ -55,8 +55,10 @@ actions**:
 - the **account list** — one row per account in **file order (rows never reorder)**;
   single click **inspects**. Each row leads with a full-width 5h bar carrying a tick
   at that account's own auto-switch threshold, then half-width 7d / Fable bars, plus
-  badges (armed bolt, last-resort sink flag, in-use, login-expired). Third-party
-  api-key accounts show an availability dot instead of %-bars.
+  badges (a sapphire "⚡ watching" chip when armed, a danger "spent"/"week spent"/"5h
+  spent" pill with a muted name when a window is at its cap, last-resort sink flag,
+  in-use, login-expired). Third-party api-key accounts show an availability dot instead
+  of %-bars.
 - the **detail card** for the inspected account — its three windows with reset times,
   a forecast-driven chain-membership line, and **the one switch surface**: a static
   "Active account" for the current one, a disabled login hint for an expired one, or
@@ -102,8 +104,9 @@ Implemented (the CBAR-4 "Preflight" redesign):
   warning triangle + frozen age (% withheld) when the daemon dies.
 - **Inspect-first account list** — file-order rows (never reorder); single click
   inspects (zero daemon traffic). 5h-dominant row anatomy: full-width 5h bar with an
-  in-track threshold tick, half-width 7d / Fable bars, and badges (armed / sink /
-  in-use / login-expired). Third-party accounts show an availability dot.
+  in-track threshold tick, half-width 7d / Fable bars, and badges ("⚡ watching" when
+  armed / "spent" pill + muted name when a window is capped / sink / in-use /
+  login-expired). Third-party accounts show an availability dot.
 - **Detail card + one switch verb** — the inspected account's three windows, a
   forecast-driven chain line, and a deliberate Switch with the **live-session
   arm-confirm** guard and a **CLI fallback** (confirmed by exit code) when the daemon
@@ -137,6 +140,7 @@ Deferred:
 | File | Role |
 |---|---|
 | `DaemonStatus.swift` | `Codable` mirror of `status.json` (schema 1) + window/auth accessors |
+| `Exhaustion.swift` | pure `ProfileStatus.spentTag` — the one definition of "a window is at its cap" |
 | `DaemonClient.swift` | read `status.json`; switch/refresh/config over the socket (shell fallback) |
 | `Theme.swift` | color roles (one meaning per hue) + `UsageBar` (threshold tick) + `usageColor`/`resetHint` |
 | `ForecastEngine.swift` | pure mirror of `fallback.rs::next_target` — the "would switch to X" prediction |
