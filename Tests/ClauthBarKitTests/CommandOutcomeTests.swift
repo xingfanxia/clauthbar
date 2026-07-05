@@ -75,19 +75,40 @@ final class CommandOutcomeTests: XCTestCase {
     // MARK: switchTo fallback POLICY — the feature's headline invariant.
 
     func testRejectionDoesNotFallBackToShell() {
-        // A daemon rejection is authoritative: switchTo must return it verbatim and
-        // NOT reach the CLI fallback (which would fire the daemon-absence path
-        // against a present daemon and hide the real error / double-apply).
-        let out = DaemonClient.switchTo("work", send: { _ in
-            .daemonError(code: "busy", message: "a switch is already in progress")
-        })
-        XCTAssertEqual(out, .daemonError(code: "busy", message: "a switch is already in progress"))
+        // A daemon rejection is authoritative: switchTo returns .refused and must
+        // NOT reach the CLI fallback (the cli closure asserts it's never called).
+        let out = DaemonClient.switchTo(
+            "work",
+            send: { _ in .daemonError(code: "busy", message: "a switch is already in progress") },
+            cli: { XCTFail("a rejection must not shell to the CLI"); return .unreachable }
+        )
+        XCTAssertEqual(out, .refused(code: "busy", message: "a switch is already in progress"))
     }
 
-    func testAcceptedSwitchIsOk() {
-        // An accepted socket switch reports .ok without shelling.
-        let out = DaemonClient.switchTo("work", send: { _ in .ok })
-        XCTAssertEqual(out, .ok)
+    func testAcceptedSwitchIsAccepted() {
+        // A socket-accepted switch reports .accepted (still needs the daemon's tick).
+        let out = DaemonClient.switchTo("work", send: { _ in .ok }, cli: { .unreachable })
+        XCTAssertEqual(out, .accepted)
+    }
+
+    func testUnreachableFallsBackToCLIConfirmedByExit() {
+        // Daemon unreachable → CLI runs; exit 0 → confirmedByCLI (not observed via
+        // status.json, which a dead daemon never rewrites).
+        let out = DaemonClient.switchTo("work", send: { _ in .unreachable }, cli: { .ok })
+        XCTAssertEqual(out, .confirmedByCLI)
+    }
+
+    func testUnreachableWithFailingCLIIsRefused() {
+        let out = DaemonClient.switchTo(
+            "work", send: { _ in .unreachable },
+            cli: { .daemonError(code: "cli_failed", message: "clauth exited 1") }
+        )
+        XCTAssertEqual(out, .refused(code: "cli_failed", message: "clauth exited 1"))
+    }
+
+    func testUnreachableWithNoCLIIsUnreachable() {
+        let out = DaemonClient.switchTo("work", send: { _ in .unreachable }, cli: { .unreachable })
+        XCTAssertEqual(out, .unreachable)
     }
 
     // MARK: last_switch / last_error decode (the observability fields).

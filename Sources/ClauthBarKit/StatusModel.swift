@@ -23,13 +23,19 @@ final class StatusModel: ObservableObject {
     /// rejection or an unreachable daemon. Rendered as a banner; auto-cleared after
     /// a few seconds and on the next successful command ('errors must be loud').
     @Published private(set) var lastCommandError: String?
-    /// True while a switch's socket command is in flight (M5/TECH-11). The tiles
-    /// disable on it so a impatient double-tap can't fire two concurrent switches
-    /// (two Keychain rewrites) — the settle ladder only hides latency, it doesn't
-    /// prevent the second tap. Cleared once the outcome is known (~≤2s), before the
-    /// settle ladder finishes, so re-selecting a different account stays responsive.
-    @Published private(set) var switchInFlight = false
+    /// The user-initiated switch lifecycle (CBAR4-3) — drives the panel's
+    /// arm-confirm / pending / confirmed / failed states. The pure transitions live
+    /// in `SwitchMachine`; this model owns the effects (dispatch, timers, observe).
+    @Published private(set) var switchPhase: SwitchMachine.Phase = .idle
+    /// A transient "rotated to X" flash (8s) when the daemon auto-switched the active
+    /// account with no local pending switch (CBAR4-3 rotation heartbeat) — the hero
+    /// feature's only in-panel proof it fired.
+    @Published private(set) var rotationFlash: String?
     @Published var showConfig = false
+
+    /// A switch is in flight (arming or pending) — tiles disable to block a second
+    /// concurrent switch (M5/TECH-11), now derived from the phase.
+    var switchInFlight: Bool { switchPhase.isBusy }
 
     /// The clauth version this clauthbar build targets. A daemon reporting a
     /// different `clauth_version` raises a SOFT skew badge (informational — the
@@ -41,6 +47,13 @@ final class StatusModel: ObservableObject {
     private var lastMtime: Date?
     private var settleTask: Task<Void, Never>?
     private var errorClearTask: Task<Void, Never>?
+    // Switch-machine effect tasks (CBAR4-3).
+    private var switchDispatchTask: Task<Void, Never>?
+    private var switchObserveTask: Task<Void, Never>?
+    private var armTimeoutTask: Task<Void, Never>?
+    private var pendingTimeoutTask: Task<Void, Never>?
+    private var switchDismissTask: Task<Void, Never>?
+    private var rotationClearTask: Task<Void, Never>?
 
     // Notification baseline (TECH-11) — set on the first observed status so the
     // initial load never fires a burst of "switched to X" notifications.
@@ -138,6 +151,9 @@ final class StatusModel: ObservableObject {
            s.lastSwitch?.trigger != "user" {
             let reason = s.lastSwitch?.trigger == "wrap_off" ? " (chain spent)" : ""
             Notifier.post(title: "clauth switched to \(now)", body: "Auto-switch\(reason).")
+            // Rotation heartbeat (CBAR4-3): flash it in the panel too — but only when
+            // there's no local switch in flight (that path shows its own confirm).
+            if !switchInFlight { flashRotation(to: now) }
         }
 
         if let err = s.lastError, err.at != lastNotifiedErrorAt {
@@ -169,16 +185,113 @@ final class StatusModel: ObservableObject {
 
     // MARK: - Commands (fire off-main, surface the outcome, verify the effect)
 
+    /// Begin a switch. Feeds the state machine a request; the effects (arm timer,
+    /// off-main dispatch, status.json observation, timeouts) follow the phase in
+    /// `enter(_:)`. The live-session arm-confirm (CBAR4-3 machine, CBAR4-4 UI) is
+    /// staged: until the confirm button lands (CBAR4-4) we go straight to pending.
     func switchTo(_ name: String) {
-        guard !switchInFlight else { return } // ignore double-taps while one is in flight
-        switchInFlight = true
-        Task { [weak self] in
-            let outcome = await Task.detached { DaemonClient.switchTo(name) }.value
-            guard let self else { return }
-            self.switchInFlight = false
-            self.handle(outcome, expecting: { $0.activeProfile == name })
+        dispatch(.requestSwitch(target: name, currentHasLiveSession: false))
+    }
+
+    /// User confirmed the live-session arm (CBAR4-4 wires the button here).
+    func confirmArmedSwitch() { dispatch(.confirmArm) }
+    /// Dismiss a transient confirmed/failed banner (or cancel an arm).
+    func dismissSwitch() { dispatch(.cancel) }
+
+    /// Advance the switch machine and run the entry effects for a NEW phase only.
+    private func dispatch(_ event: SwitchMachine.Event) {
+        let before = switchPhase
+        let after = SwitchMachine.reduce(before, event)
+        guard after != before else { return }
+        switchPhase = after
+        enter(after)
+    }
+
+    /// Effects on entering a switch phase (the impure half of the machine).
+    private func enter(_ phase: SwitchMachine.Phase) {
+        switch phase {
+        case .idle:
+            cancelSwitchTimers()
+        case .arming:
+            armTimeoutTask?.cancel()
+            armTimeoutTask = after(5) { $0.dispatch(.armTimedOut) }
+        case .pending(let target):
+            // (A stale dismiss timer from a prior confirmed/failed may still be
+            // pending here; not cancelled deliberately — a `.dismiss` in `pending`
+            // reduces to a no-op, so it can't clear a later banner.)
+            armTimeoutTask?.cancel()
+            fireSwitch(target)
+            observeSwitch(target)
+            pendingTimeoutTask?.cancel()
+            // At the 6s deadline, take ONE last look before declaring failure — a
+            // switch that landed after the final observe read (or during a contended
+            // Keychain rewrite) still confirms rather than false-failing.
+            pendingTimeoutTask = after(6) { model in
+                model.reload()
+                model.dispatch(.observedActive(model.status?.activeProfile))
+                model.dispatch(.pendingTimedOut) // no-op if the line above confirmed
+            }
+        case .confirmed:
+            cancelSwitchTimers(keepDismiss: true)
+            lastCommandError = nil
+            errorClearTask?.cancel()
+            switchDismissTask?.cancel()
+            switchDismissTask = after(2) { $0.dispatch(.dismiss) }
+        case .failed(let reason):
+            cancelSwitchTimers(keepDismiss: true)
+            showError(reason) // reuse the TECH-11 banner
+            switchDismissTask?.cancel()
+            switchDismissTask = after(6) { $0.dispatch(.dismiss) }
         }
     }
+
+    /// Fire the switch command OFF the main actor (TECH-10 #25 beach-ball), then feed
+    /// the classified dispatch back into the machine.
+    private func fireSwitch(_ target: String) {
+        switchDispatchTask?.cancel()
+        switchDispatchTask = Task { [weak self] in
+            let dispatch = await Task.detached { DaemonClient.switchTo(target) }.value
+            guard let self, !Task.isCancelled else { return }
+            self.dispatch(.dispatched(dispatch))
+        }
+    }
+
+    /// Re-read status.json on a backoff ladder, feeding each observed `active_profile`
+    /// to the machine so a socket-accepted switch confirms as soon as the daemon's
+    /// tick lands it. The values are PER-ITERATION sleeps; reads land at cumulative
+    /// t ≈ 0.5/1.2/2.2/3.5/5.1s — all inside the 6s pending deadline, so the switch
+    /// is observed here before the timeout's final check. Stops once it leaves pending.
+    private func observeSwitch(_ target: String) {
+        switchObserveTask?.cancel()
+        switchObserveTask = Task { [weak self] in
+            for sleep in [0.5, 0.7, 1.0, 1.3, 1.6] {
+                try? await Task.sleep(for: .seconds(sleep))
+                guard let self, !Task.isCancelled else { return }
+                self.reload()
+                self.dispatch(.observedActive(self.status?.activeProfile))
+                if case .pending = self.switchPhase {} else { return }
+            }
+        }
+    }
+
+    /// A main-actor timer that survives cancellation checks — the switch machine's
+    /// arm/pending/dismiss deadlines. Passes `self` in so call sites stay terse.
+    private func after(_ seconds: Double, _ action: @escaping @MainActor (StatusModel) -> Void) -> Task<Void, Never> {
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(seconds))
+            guard let self, !Task.isCancelled else { return }
+            action(self)
+        }
+    }
+
+    private func cancelSwitchTimers(keepDismiss: Bool = false) {
+        switchDispatchTask?.cancel()
+        switchObserveTask?.cancel()
+        armTimeoutTask?.cancel()
+        pendingTimeoutTask?.cancel()
+        if !keepDismiss { switchDismissTask?.cancel() }
+    }
+
     func fallbackAdd(_ name: String) { run { DaemonClient.fallbackAdd(name) } }
     func fallbackRemove(_ name: String) { run { DaemonClient.fallbackRemove(name) } }
     func fallbackMove(_ name: String, up: Bool) { run { DaemonClient.fallbackMove(name, up: up) } }
@@ -218,6 +331,13 @@ final class StatusModel: ObservableObject {
         }
     }
 
+    /// Flash a transient "rotated to X" note for ~8s (CBAR4-3 rotation heartbeat).
+    private func flashRotation(to name: String) {
+        rotationFlash = name
+        rotationClearTask?.cancel()
+        rotationClearTask = after(8) { $0.rotationFlash = nil }
+    }
+
     /// Publish a transient error banner, auto-cleared after ~6s.
     private func showError(_ message: String) {
         lastCommandError = message
@@ -229,17 +349,18 @@ final class StatusModel: ObservableObject {
         }
     }
 
-    /// Verification ladder (TECH-11): the daemon applies queued edits on its next
-    /// ~1s tick, but a switch also does a Keychain rewrite, so a single fixed re-read
-    /// routinely lands before the change is visible (users then double-tap → dup
-    /// switches). Re-read at 0.6/1.2/2.4/4.8s until `generated_at` advances AND the
-    /// expected effect holds, then stop early. Cancels any in-flight ladder.
+    /// Verification ladder for CONFIG commands (TECH-11): the daemon applies queued
+    /// edits on its next ~1s tick, so a single fixed re-read routinely lands before
+    /// the change is visible. Re-read on a backoff (PER-ITERATION sleeps; cumulative
+    /// t ≈ 0.6/1.8/4.2/9.0s) until `generated_at` advances AND the expected effect
+    /// holds, then stop early. Unlike the switch ladder this never declares failure,
+    /// so the longer tail is fine. Cancels any in-flight ladder.
     private func settle(expecting predicate: (@Sendable (DaemonStatus) -> Bool)? = nil) {
         let baseline = status?.generatedAt
         settleTask?.cancel()
         settleTask = Task { [weak self] in
-            for delay in [0.6, 1.2, 2.4, 4.8] {
-                try? await Task.sleep(for: .seconds(delay))
+            for sleep in [0.6, 1.2, 2.4, 4.8] {
+                try? await Task.sleep(for: .seconds(sleep))
                 guard let self, !Task.isCancelled else { return }
                 self.reload()
                 if let s = self.status, s.generatedAt != baseline, predicate?(s) ?? true {

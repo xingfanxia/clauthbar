@@ -79,23 +79,46 @@ enum DaemonClient {
 
     // MARK: - Commands
 
+    /// How a switch dispatch resolved (CBAR4-3). The `accepted` vs `confirmedByCLI`
+    /// split is load-bearing: a socket `accepted` still needs the daemon's next tick
+    /// to LAND it (observe status.json), whereas a CLI switch is confirmed by its
+    /// EXIT CODE and status.json will NOT move (only the daemon writes that file, and
+    /// here it's dead) — watching mtime would false-fail the exact case (design §8).
+    enum SwitchDispatch: Equatable, Sendable {
+        case accepted                                 // socket ok — daemon applies on its next tick
+        case confirmedByCLI                           // daemon unreachable; shelled `clauth` exited 0
+        case refused(code: String, message: String)   // daemon rejected, or the CLI exited non-zero
+        case unreachable                              // no socket AND no working CLI — nothing applied
+    }
+
     /// Switch the global active profile. Socket first; on an UNREACHABLE daemon fall
     /// back to `clauth <name>` (the CLI does the switch itself). A daemon *rejection*
     /// (`ok:false`) is authoritative and does NOT fall back — falling back there would
     /// fire the daemon-absence path against a present daemon and hide the real error.
-    static func switchTo(_ profile: String) -> CommandOutcome {
-        switchTo(profile, send: { sendCommand($0) })
+    static func switchTo(_ profile: String) -> SwitchDispatch {
+        switchTo(profile, send: { sendCommand($0) }, cli: { shellClauth([profile]) })
     }
 
     /// Testable seam for the fallback POLICY (the feature's headline invariant): a
-    /// daemon *rejection* returns verbatim and must NOT shell — only an UNREACHABLE
-    /// daemon (no socket / never delivered) falls back to `clauth <name>`. `send`
-    /// defaults to the real socket command; tests inject a classified reply.
-    static func switchTo(_ profile: String, send: ([String: Any]) -> CommandOutcome) -> CommandOutcome {
+    /// daemon *rejection* returns `.refused` and must NOT shell — only an UNREACHABLE
+    /// daemon (no socket / never delivered) falls back to the CLI. `send`/`cli` are
+    /// injected in tests (`cli` asserts it's never reached on a rejection).
+    static func switchTo(
+        _ profile: String,
+        send: ([String: Any]) -> CommandOutcome,
+        cli: () -> CommandOutcome
+    ) -> SwitchDispatch {
         switch send(["cmd": "switch", "profile": profile]) {
-        case .ok: return .ok
-        case .daemonError(let code, let message): return .daemonError(code: code, message: message)
-        case .unreachable: return shellClauth([profile])
+        case .ok:
+            return .accepted
+        case .daemonError(let code, let message):
+            return .refused(code: code, message: message)
+        case .unreachable:
+            switch cli() {
+            case .ok: return .confirmedByCLI
+            case .daemonError(let code, let message): return .refused(code: code, message: message)
+            case .unreachable: return .unreachable
+            }
         }
     }
 
