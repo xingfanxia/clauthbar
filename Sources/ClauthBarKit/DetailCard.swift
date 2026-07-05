@@ -42,7 +42,11 @@ struct DetailCard: View {
         VStack(spacing: 8) {
             windowRow("Session 5h", p.fiveHour, tick: p.fallback?.threshold)
             windowRow("Weekly 7d", p.sevenDay, tick: nil)
-            windowRow("Fable", p.fableWeek, tick: nil)
+            // Fable is a limited-trial window — shown only while the daemon still
+            // reports it (it drops out of status.json when the trial ends).
+            if let fable = p.fableWeek {
+                windowRow("Fable", fable, tick: nil)
+            }
         }
     }
 

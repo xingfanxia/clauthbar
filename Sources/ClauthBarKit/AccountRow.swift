@@ -104,13 +104,32 @@ struct AccountRow: View {
         }
     }
 
-    // MARK: - 7d / Fable secondary row (half-width bars)
+    // MARK: - 7d / Fable secondary row (half-width bars + shared weekly reset)
 
     private var secondaryRow: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 10) {
             miniBar("7d", p.sevenDay?.utilizationPct)
-            miniBar("Fb", p.fableWeek?.utilizationPct)
+            // Fable is a limited-trial window — render it only while the daemon still
+            // reports it. The trial window simply drops out of status.json when it
+            // ends, so `fableWeek` goes nil (no hardcoded end date), and the row
+            // collapses to 7d + the weekly reset without a dangling "Fb —".
+            if let fable = p.fableWeek {
+                miniBar("Fb", fable.utilizationPct)
+            }
+            // A SINGLE weekly reset countdown (7d and Fable share the weekly
+            // boundary), right-aligned to mirror the 5h row's "resets in …".
+            if let stamp = weeklyResetStamp {
+                Text(stamp).font(.subheadline).foregroundStyle(.secondary).fixedSize()
+            }
         }
+    }
+
+    /// The shared weekly reset, suppressed when the data is frozen — the 5h line
+    /// already carries the "as of Xm ago" stamp, and a frozen countdown would read as
+    /// live. Prefers the 7d window's reset, falling back to Fable's (they share the
+    /// weekly boundary) so a row never loses the timer if only one window carries it.
+    private var weeklyResetStamp: String? {
+        dead ? nil : Theme.resetHint(p.sevenDay?.resetsAt ?? p.fableWeek?.resetsAt)
     }
 
     private func miniBar(_ label: String, _ pct: Double?) -> some View {

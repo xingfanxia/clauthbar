@@ -20,6 +20,31 @@ enum Snapshot {
         return try? JSONDecoder().decode(DaemonStatus.self, from: bumped)
     }
 
+    /// Re-serialize the fixture with every "…fable…" window dropped from each profile —
+    /// simulates the Fable trial ending (the daemon stops reporting the window), to
+    /// verify the row + detail card collapse gracefully to 7d only.
+    private static func fixtureWithoutFable(from data: Data) -> DaemonStatus? {
+        guard var dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              var profiles = dict["profiles"] as? [[String: Any]] else {
+            // A silent `?? mock` fallback would render the fable-PRESENT fixture while
+            // claiming to be `no-fable` — flag it rather than mislead.
+            FileHandle.standardError.write(Data("snapshot[no-fable]: fixture parse failed — falling back to fable-present\n".utf8))
+            return nil
+        }
+        profiles = profiles.map { p in
+            var p = p
+            if let windows = p["windows"] as? [[String: Any]] {
+                p["windows"] = windows.filter {
+                    !(($0["label"] as? String)?.lowercased().contains("fable") ?? false)
+                }
+            }
+            return p
+        }
+        dict["profiles"] = profiles
+        guard let stripped = try? JSONSerialization.data(withJSONObject: dict) else { return nil }
+        return try? JSONDecoder().decode(DaemonStatus.self, from: stripped)
+    }
+
     /// Render a canonical CBAR-4 state (design §2) or a legacy liveness variant, and
     /// print the resolved state to stderr so the logic is verifiable without eyeballing
     /// the PNG. Canonical: `default` (inspection on active), `inspecting` (a non-active
@@ -42,6 +67,7 @@ enum Snapshot {
             case "inspecting": return (mock, .ok, nonActive, .idle)
             case "config": return (mock, .ok, nil, .idle)
             case "remove-confirm": return (mock, .ok, nil, .idle)
+            case "no-fable": return (fixtureWithoutFable(from: data) ?? mock, .ok, nil, .idle)
             case "mid-switch": return (mock, .ok, nonActive, .pending(target: nonActive))
             case "daemon-dead", "dead", "stale": return (mock, .stalled(since: "05:00"), nil, .idle)
             case "schema2": return (nil, .outOfDate(schema: 2), nil, .idle)
