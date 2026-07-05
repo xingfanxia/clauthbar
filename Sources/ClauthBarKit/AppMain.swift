@@ -46,25 +46,33 @@ struct ClauthBarApp: App {
     }
 }
 
-/// The menu-bar item: a gauge glyph + the active account name + its 5h %, so the
-/// active account is legible at a glance. Shows "—" (not a misleading 0%) when the
-/// active account has no 5h data yet.
+/// The menu-bar item, driven by the pure `MenuBarLabelLadder` (CBAR4-6, design §6):
+/// a state glyph + active account name + 5h % (or a frozen age / "off" / availability
+/// dot). ALL state is in SF Symbol SHAPE — the menu bar template-renders, so color is
+/// never load-bearing here.
 private struct MenuBarLabel: View {
     @ObservedObject var model: StatusModel
 
     var body: some View {
+        let spec = MenuBarLabelLadder.spec(
+            status: model.status,
+            switchInFlight: model.switchInFlight,
+            rotationFlash: model.rotationFlash,
+            now: Date()
+        )
         HStack(spacing: 3) {
-            // Dim the glyph when the daemon isn't live (stalled / out-of-date /
-            // down) so a frozen % is never read as current truth (TECH-4).
-            Image(systemName: "gauge.with.dots.needle.bottom.50percent")
-                .foregroundStyle(model.isHealthy ? AnyShapeStyle(.primary) : AnyShapeStyle(.tertiary))
-            if let active = model.active {
-                Text(active.name)
-                if let five = active.fiveHour {
-                    Text("\(Int(five.utilizationPct.rounded()))%").monospacedDigit()
-                } else {
-                    Text("—")
-                }
+            Image(systemName: spec.symbol)
+            if spec.nearThresholdDot {
+                Image(systemName: "circlebadge.fill").font(.system(size: 5))
+            }
+            if !spec.text.isEmpty {
+                Text(spec.text).font(.system(size: 13)).monospacedDigit().lineLimit(1)
+            }
+            if let available = spec.availabilityDot {
+                Image(systemName: available ? "circle.fill" : "circle").font(.system(size: 6))
+            }
+            if let trailing = spec.trailingSymbol {
+                Image(systemName: trailing)
             }
         }
     }
