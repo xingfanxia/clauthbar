@@ -12,6 +12,7 @@ struct AccountRow: View {
     let dead: Bool
     let frozenStamp: String? // "as of 4m ago" when dead, else nil
     let onInspect: () -> Void
+    @State private var hovering = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -25,8 +26,11 @@ struct AccountRow: View {
         }
         .padding(.vertical, 7).padding(.horizontal, 10)
         .background(
+            // Inspected owns the 0.08 fill + ring; a bare hover gets a lighter 0.045
+            // wash — a quieter cousin of ActionRow's 0.08 hover — so rows read as
+            // clickable without masquerading as inspected.
             RoundedRectangle(cornerRadius: 9)
-                .fill(Color.primary.opacity(inspected ? 0.08 : 0))
+                .fill(Color.primary.opacity(inspected ? 0.08 : (hovering ? 0.045 : 0)))
                 .overlay(
                     RoundedRectangle(cornerRadius: 9)
                         .strokeBorder(Color.primary.opacity(inspected ? 0.18 : 0), lineWidth: 1)
@@ -34,6 +38,7 @@ struct AccountRow: View {
         )
         .contentShape(Rectangle())
         .onTapGesture(perform: onInspect)
+        .onHover { hovering = $0 }
         .contextMenu { AccountContextMenu(model: model, p: p, status: status) }
         .opacity(dead ? 0.6 : 1)
         .help("\(p.name) · \(p.tier ?? p.provider) — click to inspect")
@@ -48,16 +53,26 @@ struct AccountRow: View {
             Image(systemName: p.active ? "checkmark.circle.fill" : "circle")
                 .font(.system(size: 12))
                 .foregroundStyle(p.active ? Theme.accent : Color.secondary)
+            // A spent account's name mutes — a pre-attentive "this one's unavailable".
             Text(p.name).font(.body).fontWeight(.semibold).lineLimit(1).truncationMode(.tail)
+                .foregroundStyle(rowSpentTag != nil ? Color.secondary : Color.primary)
             if let tier = p.tier {
                 Text(tier).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
             } else if p.provider != "anthropic" {
                 Text(providerLabel).font(.subheadline).foregroundStyle(.secondary)
             }
             Spacer(minLength: 4)
-            badgeCluster
+            // The badges keep their intrinsic width (higher layout priority); a long
+            // name is the sole truncation sink, so a wide cluster never clips to
+            // "watchi…" on the fixed 340pt panel.
+            badgeCluster.layoutPriority(1)
         }
     }
+
+    /// The spent badge to show in THIS row — suppressed on frozen data (`dead`) so a
+    /// stale 100% can't assert "spent" while the rotation engine already treats the
+    /// window as reset. `ProfileStatus.spentTag` stays the pure "at cap on last read".
+    private var rowSpentTag: String? { dead ? nil : p.spentTag }
 
     @ViewBuilder private var badgeCluster: some View {
         HStack(spacing: 5) {
@@ -66,9 +81,22 @@ struct AccountRow: View {
                     .labelStyle(.iconOnly).font(.system(size: 11)).foregroundStyle(Theme.danger)
                     .help("Login expired — clauth login \(p.name)")
             }
+            // Exhausted: a 5h or weekly window is at its cap → the account can't be
+            // used until it resets. A danger pill naming the spent window (§5 danger).
+            if let tag = rowSpentTag {
+                Text(tag)
+                    .font(.system(size: 10)).fontWeight(.medium).fixedSize()
+                    .padding(.vertical, 1).padding(.horizontal, 5)
+                    .background(Theme.danger.opacity(0.18), in: Capsule())
+                    .foregroundStyle(Theme.danger)
+                    .help("This account has hit a usage limit — unavailable until it resets")
+            }
+            // "watching" (not a bare bolt): auto-switch is watching this account and
+            // will rotate away from it at its threshold (sapphire = the armed hue, §5).
             if p.fallback?.armed == true {
-                Image(systemName: "bolt.fill").font(.system(size: 11)).foregroundStyle(Theme.sapphire)
-                    .help("Armed — auto-switch is watching this account")
+                Label("watching", systemImage: "bolt.fill")
+                    .font(.system(size: 10)).fontWeight(.medium).foregroundStyle(Theme.sapphire).fixedSize()
+                    .help("Auto-switch is watching this account — it rotates away at the threshold")
             }
             if (p.fallback?.threshold ?? 0) >= 100 {
                 Image(systemName: "flag.fill").font(.system(size: 10)).foregroundStyle(.secondary)
@@ -186,7 +214,9 @@ struct AccountRow: View {
         var parts = [p.name]
         if p.active { parts.append("active account") }
         if let tier = p.tier { parts.append(tier) }
-        if p.fallback?.armed == true { parts.append("armed") }
+        // Order mirrors the visual badge cluster: spent pill, then the watching chip.
+        if let tag = rowSpentTag { parts.append("\(tag) — hit a usage limit") }
+        if p.fallback?.armed == true { parts.append("armed, watching") }
         if p.provider == "anthropic" { parts.append("session \(Int(p.fiveHourPct.rounded())) percent used") }
         return parts.joined(separator: ", ")
     }

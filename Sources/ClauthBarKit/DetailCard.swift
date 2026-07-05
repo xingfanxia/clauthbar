@@ -107,15 +107,24 @@ struct DetailCard: View {
     }
 
     private var activeState: some View {
-        HStack {
-            Spacer()
-            Label(p.hasLiveSession ? "Active account · live session attached" : "Active account",
-                  systemImage: "checkmark.circle.fill")
-                .font(.subheadline).foregroundStyle(Theme.accent)
-            Spacer()
+        VStack(spacing: 5) {
+            HStack {
+                Spacer()
+                Label(p.hasLiveSession ? "Active account · live session attached" : "Active account",
+                      systemImage: "checkmark.circle.fill")
+                    .font(.subheadline).foregroundStyle(Theme.accent)
+                Spacer()
+            }
+            .frame(height: 28)
+            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.accent.opacity(0.5), lineWidth: 1))
+            // The active account has no switch verb — so name the path. This is the
+            // one spot a first-time user looks for "how do I switch?" (the panel opens
+            // with the active account inspected, i.e. on exactly this card).
+            if model.listProfiles.count > 1 {
+                Text("Pick another account above to switch to it.")
+                    .font(.caption).foregroundStyle(.tertiary)
+            }
         }
-        .frame(height: 28)
-        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.accent.opacity(0.5), lineWidth: 1))
     }
 
     private func switchButton(idleTitle: String) -> some View {

@@ -45,6 +45,41 @@ enum Snapshot {
         return try? JSONDecoder().decode(DaemonStatus.self, from: stripped)
     }
 
+    /// Re-serialize the fixture with the first non-active anthropic profile's weekly
+    /// window pinned to 100% — the real-world "week spent" case (a session with 5h
+    /// headroom but its rolling weekly cap hit). Returns the (status, name-it-bumped)
+    /// so the caller can inspect exactly the exhausted row (never drifting to a
+    /// different one). nil if no such profile / no `7d` window exists to bump.
+    private static func fixtureExhausted(from data: Data) -> (DaemonStatus, String)? {
+        guard var dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              var profiles = dict["profiles"] as? [[String: Any]],
+              let idx = profiles.firstIndex(where: {
+                  ($0["active"] as? Bool) != true && ($0["provider"] as? String) == "anthropic"
+              })
+        else {
+            FileHandle.standardError.write(Data("snapshot[spent]: no non-active anthropic profile to exhaust\n".utf8))
+            return nil
+        }
+        var p = profiles[idx]
+        let name = (p["name"] as? String) ?? ""
+        guard var windows = p["windows"] as? [[String: Any]],
+              windows.contains(where: { ($0["label"] as? String) == "7d" }) else {
+            FileHandle.standardError.write(Data("snapshot[spent]: \(name) has no 7d window to pin — spent state NOT exercised\n".utf8))
+            return nil
+        }
+        windows = windows.map { w in
+            var w = w
+            if (w["label"] as? String) == "7d" { w["utilization_pct"] = 100 }
+            return w
+        }
+        p["windows"] = windows
+        profiles[idx] = p
+        dict["profiles"] = profiles
+        guard let bumped = try? JSONSerialization.data(withJSONObject: dict),
+              let status = try? JSONDecoder().decode(DaemonStatus.self, from: bumped) else { return nil }
+        return (status, name)
+    }
+
     /// Render a canonical CBAR-4 state (design §2) or a legacy liveness variant, and
     /// print the resolved state to stderr so the logic is verifiable without eyeballing
     /// the PNG. Canonical: `default` (inspection on active), `inspecting` (a non-active
@@ -60,6 +95,7 @@ enum Snapshot {
             return
         }
         let nonActive = mock.profiles.first { !$0.active }?.name ?? mock.profiles.first?.name ?? ""
+        let exhausted = fixtureExhausted(from: data)
 
         // (status, liveness, inspected, phase) per variant.
         let (status, liveness, inspected, phase): (DaemonStatus?, StatusModel.Liveness, String?, SwitchMachine.Phase) = {
@@ -68,11 +104,16 @@ enum Snapshot {
             case "config": return (mock, .ok, nil, .idle)
             case "remove-confirm": return (mock, .ok, nil, .idle)
             case "no-fable": return (fixtureWithoutFable(from: data) ?? mock, .ok, nil, .idle)
+            case "spent": return (exhausted?.0 ?? mock, .ok, exhausted?.1 ?? nonActive, .idle)
             case "mid-switch": return (mock, .ok, nonActive, .pending(target: nonActive))
             case "daemon-dead", "dead", "stale": return (mock, .stalled(since: "05:00"), nil, .idle)
             case "schema2": return (nil, .outOfDate(schema: 2), nil, .idle)
             case "skew": return (fixtureWithVersion("9.9.9", from: data) ?? mock, .ok, nil, .idle)
-            default: return (mock, .ok, nil, .idle) // default / healthy
+            // default / healthy: inspected=nil resolves to the ACTIVE account (the real
+            // first-open path — StatusModel.inspected falls back to active), so this
+            // renders the one card that carries the "pick another account above to
+            // switch" hint without pinning a name.
+            default: return (mock, .ok, nil, .idle)
             }
         }()
         let resolved: String
