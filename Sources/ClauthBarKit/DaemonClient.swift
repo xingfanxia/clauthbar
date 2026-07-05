@@ -305,6 +305,20 @@ enum DaemonClient {
 
     // MARK: - Shell fallback
 
+    /// Spawn `clauth daemon` for the dead-banner [Start daemon] button (design
+    /// §3.13). Best-effort — returns whether a binary was found to launch. The
+    /// spawn is a CHILD of clauthbar (not fully detached); the durable, supervised
+    /// relaunch is the operator's LaunchAgent, so this is an in-session relight, not
+    /// a substitute for it.
+    @discardableResult
+    static func startDaemon() -> Bool {
+        guard let bin = clauthBinary() else { return false }
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: bin)
+        proc.arguments = ["daemon"]
+        do { try proc.run(); return true } catch { return false }
+    }
+
     /// Locate the `clauth` binary: PATH, then the standard cargo bin.
     private static func clauthBinary() -> String? {
         let cargo = FileManager.default.homeDirectoryForCurrentUser

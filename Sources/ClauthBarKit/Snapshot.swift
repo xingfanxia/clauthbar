@@ -20,11 +20,11 @@ enum Snapshot {
         return try? JSONDecoder().decode(DaemonStatus.self, from: bumped)
     }
 
-    /// Render a specific liveness variant (TECH-4/TECH-11 harness): `healthy` (live
-    /// panel), `stale` (stalled banner over content), `schema2` (out-of-date state),
-    /// `skew` (mismatched clauth_version → version-skew badge). Prints the RESOLVED
-    /// liveness + skew to stderr so the state logic is verifiable without eyeballing
-    /// the PNG (`--snapshot=stale` → daemonStalled=true, `--snapshot=skew` → skew=…).
+    /// Render a canonical CBAR-4 state (design §2) or a legacy liveness variant, and
+    /// print the resolved state to stderr so the logic is verifiable without eyeballing
+    /// the PNG. Canonical: `default` (inspection on active), `inspecting` (a non-active
+    /// row inspected), `mid-switch` (pending), `daemon-dead` (frozen banner + dim).
+    /// Legacy: `healthy`/`stale`/`schema2`/`skew`.
     @MainActor
     static func render(variant: String, to path: String) {
         guard let data = Fixtures.statusJSONData(),
@@ -33,12 +33,17 @@ enum Snapshot {
             FileHandle.standardError.write(Data("snapshot: failed to load/decode fixture\n".utf8))
             return
         }
-        let (status, liveness): (DaemonStatus?, StatusModel.Liveness) = {
+        let nonActive = mock.profiles.first { !$0.active }?.name ?? mock.profiles.first?.name ?? ""
+
+        // (status, liveness, inspected, phase) per variant.
+        let (status, liveness, inspected, phase): (DaemonStatus?, StatusModel.Liveness, String?, SwitchMachine.Phase) = {
             switch variant {
-            case "stale": return (mock, .stalled(since: "05:00"))
-            case "schema2": return (nil, .outOfDate(schema: 2))
-            case "skew": return (fixtureWithVersion("9.9.9", from: data) ?? mock, .ok)
-            default: return (mock, .ok)
+            case "inspecting": return (mock, .ok, nonActive, .idle)
+            case "mid-switch": return (mock, .ok, nonActive, .pending(target: nonActive))
+            case "daemon-dead", "dead", "stale": return (mock, .stalled(since: "05:00"), nil, .idle)
+            case "schema2": return (nil, .outOfDate(schema: 2), nil, .idle)
+            case "skew": return (fixtureWithVersion("9.9.9", from: data) ?? mock, .ok, nil, .idle)
+            default: return (mock, .ok, nil, .idle) // default / healthy
             }
         }()
         let resolved: String
@@ -48,11 +53,13 @@ enum Snapshot {
         case .outOfDate(let n): resolved = "outOfDate(schema: \(n))"
         case .down: resolved = "down"
         }
-        let skewNote = StatusModel(preview: status, liveness: liveness).versionSkew.map { " skew=\($0)" } ?? ""
-        FileHandle.standardError.write(Data("snapshot[\(variant)]: liveness=\(resolved)\(skewNote)\n".utf8))
+        let model = StatusModel(preview: status, liveness: liveness, inspected: inspected, phase: phase)
+        let skewNote = model.versionSkew.map { " skew=\($0)" } ?? ""
+        let phaseNote = phase == .idle ? "" : " phase=\(phase)"
+        let inspectNote = inspected.map { " inspected=\($0)" } ?? ""
+        FileHandle.standardError.write(
+            Data("snapshot[\(variant)]: liveness=\(resolved)\(inspectNote)\(phaseNote)\(skewNote)\n".utf8))
 
-        let model = StatusModel(preview: status, liveness: liveness)
-        model.showConfig = true // render with the config section open
         let view = PanelView(model: model)
             .background(Color(nsColor: .windowBackgroundColor))
             .preferredColorScheme(.dark)

@@ -15,6 +15,10 @@ final class StatusModel: ObservableObject {
         case stalled(since: String)
         case outOfDate(schema: Int)
         case down
+
+        /// A frozen-but-present status (the dead-daemon banner case with content to
+        /// dim), distinct from `.down` (never written) and `.outOfDate` (schema).
+        var isStalled: Bool { if case .stalled = self { return true }; return false }
     }
 
     @Published private(set) var status: DaemonStatus?
@@ -61,7 +65,12 @@ final class StatusModel: ObservableObject {
     private var lastNotifiedActive: String?
     private var lastNotifiedErrorAt: String?
 
+    /// True for the snapshot/preview init — the panel skips its open-reset of
+    /// inspection so an injected inspecting/mid-switch state survives the render.
+    let isPreview: Bool
+
     init() {
+        isPreview = false
         Notifier.requestAuthorizationIfNeeded()
         reload()
         timer = Timer.scheduledTimer(withTimeInterval: 4, repeats: true) { [weak self] _ in
@@ -72,10 +81,15 @@ final class StatusModel: ObservableObject {
         timer?.tolerance = 1.0
     }
 
-    /// Preview/snapshot init: inject a fixed status + liveness, no polling.
-    init(preview: DaemonStatus?, liveness: Liveness = .ok) {
+    /// Preview/snapshot init: inject a fixed status + liveness (+ optional inspection
+    /// and switch phase for the canonical-state snapshots), no polling.
+    init(preview: DaemonStatus?, liveness: Liveness = .ok,
+         inspected: String? = nil, phase: SwitchMachine.Phase = .idle) {
+        self.isPreview = true
         self.status = preview
         self.liveness = liveness
+        self.inspectedName = inspected
+        self.switchPhase = phase
     }
 
     /// The active account is only trustworthy when live — the menu-bar glyph dims
@@ -163,9 +177,173 @@ final class StatusModel: ObservableObject {
 
     var active: ProfileStatus? { status?.profiles.first { $0.active } }
 
-    /// Active pinned first, then file order — the switcher's tile order.
-    var orderedProfiles: [ProfileStatus] {
-        (status?.profiles ?? []).sorted { a, b in a.active && !b.active }
+    /// Accounts in STABLE FILE ORDER — the CBAR-4 list never reorders (design §2:
+    /// "rows never reorder; the terracotta ✓ badge moves"). Only the active badge
+    /// and the inspection ring move, so the eye keeps its place.
+    var listProfiles: [ProfileStatus] { status?.profiles ?? [] }
+
+    // MARK: - Inspection (CBAR4-4 — browse freely, switch deliberately)
+
+    /// The account the detail card is showing. `nil` ⇒ follow the active account.
+    /// A single click INSPECTS (pure view state, zero daemon traffic); opening the
+    /// panel resets inspection to the active account.
+    @Published var inspectedName: String?
+
+    /// The inspected profile — the explicit selection, else the active account, else
+    /// the first CHAIN member (design §3.1: reset to active, or the chain head when
+    /// active_profile is null, e.g. wrap-off), else the first row.
+    var inspected: ProfileStatus? {
+        if let name = inspectedName, let p = status?.profiles.first(where: { $0.name == name }) {
+            return p
+        }
+        if let active { return active }
+        if let s = status, let head = s.fallbackChain.first,
+           let p = s.profiles.first(where: { $0.name == head }) {
+            return p
+        }
+        return status?.profiles.first
+    }
+
+    func inspect(_ name: String) { inspectedName = name }
+
+    /// Reset inspection to the active account (called when the panel opens).
+    func resetInspection() { inspectedName = nil }
+
+    /// True when `name` is the row the detail card is currently targeting.
+    func isInspected(_ name: String) -> Bool { inspected?.name == name }
+
+    // MARK: - Forecast (drives the status strip + detail chain line)
+
+    /// The daemon's predicted next auto-switch target (pure `ForecastEngine` mirror
+    /// of fallback.rs). `now` is read here; the view refreshes on the poll/1s clock.
+    var forecast: ForecastEngine.Outcome {
+        guard let s = status else { return .none }
+        return ForecastEngine.nextTarget(s, now: Date())
+    }
+
+    /// Non-empty chain with zero armed members, or an empty chain — auto-switch is
+    /// idle (design §3.16). Drives the amber zero-armed strip + the label bolt.slash.
+    var autoSwitchIdle: Bool {
+        guard let s = status else { return false }
+        let armed = s.profiles.contains { $0.fallback?.armed == true }
+        return s.fallbackChain.isEmpty || !armed
+    }
+
+    /// Wrap-off ETA (design §3.15): the soonest a chain member's live window resets,
+    /// so an all-off state can promise "auto-resumes when a window resets (≤ …)".
+    var wrapOffResumeETA: String? {
+        guard let s = status else { return nil }
+        let now = Date()
+        let resets: [Date] = s.fallbackChain
+            .compactMap { name in s.profiles.first { $0.name == name } }
+            .compactMap { $0.fiveHour?.resetsAt }
+            .compactMap { Theme.parseISO($0) }
+            .filter { $0 > now }
+        guard let soonest = resets.min() else { return nil }
+        return Theme.resetHintText(secondsRemaining: Int(soonest.timeIntervalSince(now)))
+    }
+
+    /// The forecast sentence for the status strip (design §2/§3.11), worded as a
+    /// PREDICTION by the pure engine. nil when there's no active account to watch.
+    var forecastSentence: String? {
+        guard let active else { return nil }
+        switch forecast {
+        case .switchTo(let target):
+            let at = active.fallback.map { " at \(Int($0.threshold))%" } ?? ""
+            return "Watching \(active.name) — would switch to \(target)\(at)"
+        case .off:
+            return "Watching \(active.name) — would switch everything off when spent"
+        case .none:
+            return "Watching \(active.name) — no rotation target"
+        }
+    }
+
+    /// The strip's second line under the forecast: "now 62% · live · updated 3s ago"
+    /// (design §2 STATE 1). The now% is the active account's 5h; the freshness word
+    /// comes off the same generated_at age the liveness ladder uses.
+    var livenessStamp: String {
+        var parts: [String] = []
+        if let pct = active?.fiveHour?.utilizationPct { parts.append("now \(Int(pct.rounded()))%") }
+        parts.append(freshnessWord)
+        if let age = generatedAtAge { parts.append("updated \(Self.ago(Int(age)))") }
+        return parts.joined(separator: " · ")
+    }
+
+    /// "live" / "syncing…" / "frozen" from the generated_at age (the liveness ladder).
+    var freshnessWord: String {
+        switch generatedAtAge.map({ LivenessLadder.freshness(ageSeconds: $0) }) ?? .dead {
+        case .live: return "live"
+        case .syncing: return "syncing…"
+        case .dead: return "frozen"
+        }
+    }
+
+    /// Coarse frozen-age for the dead banner ("4m ago"), from generated_at.
+    var frozenAge: String { generatedAtAge.map { Self.ago(Int($0)) } ?? "a while ago" }
+
+    /// Short age WITHOUT " ago" ("3s"/"2m"/"1h") for the live detail "Fresh · 3s"
+    /// stamp (design §4). We're only asked for this in the live panel, so it never
+    /// renders the self-contradictory "Fresh · frozen".
+    var freshAge: String {
+        guard let age = generatedAtAge else { return "now" }
+        let s = Int(max(0, age))
+        if s < 60 { return "\(s)s" }
+        if s < 3600 { return "\(s / 60)m" }
+        if s < 86_400 { return "\(s / 3600)h" }
+        return "\(s / 86_400)d"
+    }
+
+    private var generatedAtAge: Double? {
+        status.flatMap { Theme.parseISO($0.generatedAt) }.map { Date().timeIntervalSince($0) }
+    }
+
+    /// Coarse "N{s,m,h,d} ago" from a positive second count.
+    static func ago(_ secs: Int) -> String {
+        if secs < 60 { return "\(max(0, secs))s ago" }
+        if secs < 3600 { return "\(secs / 60)m ago" }
+        if secs < 86_400 { return "\(secs / 3600)h ago" }
+        return "\(secs / 86_400)d ago"
+    }
+
+    /// Best-effort spawn of `clauth daemon` for the dead-banner recovery button
+    /// (design §3.13). The durable autostart is the operator's LaunchAgent (which
+    /// also re-parents/supervises it); this just relights it in-session. Surfaces a
+    /// loud hint if the binary can't be found (so the button isn't a silent no-op).
+    func startDaemon() {
+        Task { [weak self] in
+            let launched = await Task.detached { DaemonClient.startDaemon() }.value
+            guard let self, !launched else { return }
+            self.showError("Couldn't find the clauth binary — run `clauth daemon` yourself.")
+        }
+    }
+
+    /// The detail-card chain-membership line for an inspected account (design §2):
+    /// "⚡ 1st in chain · watched now — would rotate to cl-ax at 95%…" / "⚑ 2nd in
+    /// chain · last resort — parks here even at 100%". nil for a non-chain account.
+    func chainLine(for p: ProfileStatus) -> String? {
+        guard let s = status, let idx = s.fallbackChain.firstIndex(of: p.name) else { return nil }
+        let ordinal = Self.ordinal(idx + 1)
+        let threshold = p.fallback?.threshold ?? 95
+        if threshold >= 100 {
+            return "\(ordinal) in chain · last resort — chain parks here even at 100%"
+        }
+        if p.active, case .switchTo(let target) = forecast {
+            return "\(ordinal) in chain · watched now — would rotate to \(target) at \(Int(threshold))% of the 5h window"
+        }
+        return "\(ordinal) in chain · leaves at \(Int(threshold))% of the 5h window"
+    }
+
+    /// 1 → "1st", 2 → "2nd", 3 → "3rd", 11–13 → "…th", etc.
+    nonisolated static func ordinal(_ n: Int) -> String {
+        let suffix: String
+        switch (n % 100, n % 10) {
+        case (11, _), (12, _), (13, _): suffix = "th"
+        case (_, 1): suffix = "st"
+        case (_, 2): suffix = "nd"
+        case (_, 3): suffix = "rd"
+        default: suffix = "th"
+        }
+        return "\(n)\(suffix)"
     }
 
     /// True when the daemon is demonstrably alive — a fresh status read AND the
@@ -190,7 +368,10 @@ final class StatusModel: ObservableObject {
     /// `enter(_:)`. The live-session arm-confirm (CBAR4-3 machine, CBAR4-4 UI) is
     /// staged: until the confirm button lands (CBAR4-4) we go straight to pending.
     func switchTo(_ name: String) {
-        dispatch(.requestSwitch(target: name, currentHasLiveSession: false))
+        // Guard the CURRENT account's live session (design §3.7): if it has one, a
+        // Keychain rewrite would strand it, so the machine arms for a confirm.
+        let live = active?.hasLiveSession ?? false
+        dispatch(.requestSwitch(target: name, currentHasLiveSession: live))
     }
 
     /// User confirmed the live-session arm (CBAR4-4 wires the button here).

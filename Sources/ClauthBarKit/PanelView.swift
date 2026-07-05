@@ -1,49 +1,155 @@
 import AppKit
 import SwiftUI
 
-/// The menu-bar dropdown, hosted in `MenuBarExtra(.window)`. A translucent panel:
-/// account switcher → active account's usage (Session / Weekly / Fable) → the
-/// fallback chain → a Configure disclosure → actions. Data comes from
-/// `status.json` via `StatusModel`; edits go to the daemon socket.
+/// The menu-bar dropdown, hosted in `MenuBarExtra(.window)` — the CBAR-4 "Preflight"
+/// panel (design §2): status strip → account LIST (inspect-first) → detail card of
+/// the inspected account → chain rail → action rows. Browse freely (single click
+/// inspects, zero daemon traffic); switch deliberately (the one verb in the detail
+/// card). Data comes from `status.json` via `StatusModel`; edits go to the socket.
 struct PanelView: View {
     @ObservedObject var model: StatusModel
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // A command error is orthogonal to liveness — surface it above everything
-            // so a rejected tap is never silent (TECH-11).
-            if let error = model.lastCommandError {
-                commandErrorBanner(error)
-            }
             switch model.liveness {
-            case .down:
-                emptyState
             case .outOfDate(let schema):
                 outOfDateState(schema)
-            case .ok:
-                if let status = model.status { content(status) } else { emptyState }
-            case .stalled(let since):
-                if let status = model.status {
-                    stalledBanner(since)
-                    content(status)
-                } else {
-                    emptyState
-                }
+            case .down:
+                emptyState
+            case .ok, .stalled:
+                if let status = model.status { populated(status) } else { emptyState }
             }
         }
-        .frame(width: 320)
+        .frame(width: 340)
         .padding(.vertical, 12)
+        .onAppear { if !model.isPreview { model.resetInspection() } }
     }
 
-    // MARK: - Command-outcome banner (TECH-11)
+    // MARK: - Populated panel (STATE 1/2/3/4)
 
-    /// A transient toast for the last command's error (a daemon rejection or an
-    /// unreachable daemon). Auto-clears; the model owns the timing.
+    @ViewBuilder
+    private func populated(_ status: DaemonStatus) -> some View {
+        let dead = model.liveness.isStalled
+        // Config-command errors (a rejected chain edit) surface here; switch errors
+        // live in the strip's lifecycle line.
+        if let error = model.lastCommandError {
+            commandErrorBanner(error)
+        }
+        StatusStrip(model: model)
+        Divider().padding(.horizontal, 12)
+        accounts(status, dead: dead)
+        if let inspected = model.inspected {
+            Divider().padding(.horizontal, 12).padding(.vertical, 6)
+            DetailCard(model: model, p: inspected, dead: dead)
+        }
+        Divider().padding(.horizontal, 12).padding(.vertical, 8)
+        chainSection(status, dead: dead)
+        if model.showConfig {
+            ConfigView(model: model, status: status).padding(.horizontal, 16).padding(.top, 6)
+        }
+        Divider().padding(.horizontal, 12).padding(.vertical, 8)
+        actions(dead: dead)
+    }
+
+    // MARK: - Accounts list (§2 — file order, inspect on click)
+
+    @ViewBuilder
+    private func accounts(_ status: DaemonStatus, dead: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("ACCOUNTS")
+                .font(.subheadline).fontWeight(.semibold).foregroundStyle(.secondary)
+                .padding(.horizontal, 16).padding(.top, 4)
+            let rows = ForEach(model.listProfiles) { p in
+                AccountRow(
+                    p: p,
+                    inspected: model.isInspected(p.name),
+                    dead: dead,
+                    frozenStamp: dead ? "as of \(model.frozenAge)" : nil,
+                    onInspect: { model.inspect(p.name) }
+                )
+                .padding(.horizontal, 8)
+            }
+            if model.listProfiles.count > 6 {
+                ScrollView { VStack(spacing: 2) { rows } }.frame(maxHeight: 340)
+            } else {
+                rows
+            }
+        }
+        // ↑/↓ move inspection (macOS 14 focus nav; degrades gracefully).
+        .focusable()
+        .onMoveCommand { direction in moveInspection(direction) }
+    }
+
+    private func moveInspection(_ direction: MoveCommandDirection) {
+        let names = model.listProfiles.map(\.name)
+        guard !names.isEmpty else { return }
+        let current = model.inspected?.name ?? names[0]
+        guard let i = names.firstIndex(of: current) else { return }
+        switch direction {
+        case .up: model.inspect(names[max(0, i - 1)])
+        case .down: model.inspect(names[min(names.count - 1, i + 1)])
+        default: break
+        }
+    }
+
+    // MARK: - Chain rail (§2)
+
+    private func chainSection(_ status: DaemonStatus, dead: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("CHAIN").font(.subheadline).fontWeight(.semibold).foregroundStyle(.secondary)
+                Spacer()
+                Button("Edit") { model.showConfig.toggle() }
+                    .buttonStyle(.borderless).controlSize(.small).disabled(dead)
+            }
+            if status.fallbackChain.isEmpty {
+                Text("None — add accounts in Configure").font(.footnote).foregroundStyle(.secondary)
+            } else {
+                ChainStrip(status: status)
+                Text(status.wrapOff
+                     ? "when spent: switch everything off"
+                     : "when spent: stay on last account")
+                    .font(.caption).foregroundStyle(.tertiary)
+            }
+            if let skew = model.versionSkew {
+                Text("daemon clauth \(skew); clauthbar targets \(StatusModel.expectedClauthVersion)")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+        }
+        .padding(.horizontal, 16)
+        .opacity(dead ? 0.6 : 1)
+    }
+
+    // MARK: - Actions (§2 — 24pt rows)
+
+    private func actions(dead: Bool) -> some View {
+        VStack(spacing: 1) {
+            ActionRow(icon: "arrow.clockwise", title: "Refresh usage") { model.refresh() }
+                .disabled(dead)
+                .keyboardShortcut("r", modifiers: [])
+            if LoginItem.isAvailable {
+                Toggle(isOn: Binding(get: { LoginItem.isEnabled }, set: { LoginItem.setEnabled($0) })) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "power.circle").frame(width: 16)
+                        Text("Start at login"); Spacer()
+                    }
+                }
+                .toggleStyle(.switch).controlSize(.mini)
+                .padding(.vertical, 5).padding(.horizontal, 8)
+            }
+            ActionRow(icon: "power", title: "Quit clauthbar · daemon keeps running") { NSApp.terminate(nil) }
+                .keyboardShortcut("q", modifiers: .command)
+                .help("The clauth daemon keeps running — auto-switch continues.")
+        }
+        .padding(.horizontal, 8)
+    }
+
+    // MARK: - Config-command error banner (TECH-11)
+
     private func commandErrorBanner(_ message: String) -> some View {
         HStack(spacing: 8) {
             Image(systemName: "xmark.octagon.fill").foregroundStyle(Theme.danger)
-            Text(message).font(.caption).foregroundStyle(.primary)
-                .fixedSize(horizontal: false, vertical: true)
+            Text(message).font(.caption).fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 12).padding(.vertical, 8)
@@ -51,27 +157,8 @@ struct PanelView: View {
         .padding(.horizontal, 12).padding(.bottom, 6)
     }
 
-    // MARK: - Liveness banners (TECH-4)
+    // MARK: - Empty / out-of-date states
 
-    /// The daemon wrote this file then died: the numbers below are frozen, not
-    /// live. A loud banner over the (last-known) content so a stale % never reads
-    /// as current.
-    private func stalledBanner(_ since: String) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Theme.danger)
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Daemon stalled — data from \(since)").font(.caption).fontWeight(.semibold)
-                Text("Restart with `clauth daemon`").font(.caption2).foregroundStyle(.secondary)
-            }
-            Spacer()
-        }
-        .padding(.horizontal, 12).padding(.vertical, 8)
-        .background(Theme.danger.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
-        .padding(.horizontal, 12).padding(.bottom, 6)
-    }
-
-    /// The daemon's status.json is a schema this clauthbar doesn't understand —
-    /// update clauthbar, don't debug launchd. Distinct from the daemon-down state.
     private func outOfDateState(_ schema: Int) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Label("clauthbar out of date", systemImage: "arrow.up.circle")
@@ -83,196 +170,6 @@ struct PanelView: View {
         }
         .padding(.horizontal, 16)
     }
-
-    // MARK: - Populated panel
-
-    @ViewBuilder
-    private func content(_ status: DaemonStatus) -> some View {
-        switcher(status)
-            .padding(.horizontal, 12)
-            .padding(.bottom, 4)
-
-        if let active = model.active {
-            Divider().padding(.horizontal, 12).padding(.vertical, 8)
-            header(active)
-            usage(active).padding(.top, 10)
-        }
-
-        Divider().padding(.horizontal, 12).padding(.vertical, 10)
-        chainSection(status)
-
-        Divider().padding(.horizontal, 12).padding(.vertical, 10)
-        ConfigView(model: model, status: status).padding(.horizontal, 16)
-
-        footerMeta(status)
-
-        Divider().padding(.horizontal, 12).padding(.vertical, 8)
-        actions
-    }
-
-    // MARK: - Account switcher (the hero — switching is the point)
-
-    private func switcher(_ status: DaemonStatus) -> some View {
-        HStack(spacing: 8) {
-            ForEach(model.orderedProfiles) { p in
-                // Disable every tile while a switch is in flight so a double-tap
-                // can't fire two concurrent switches (M5/TECH-11).
-                AccountTile(p: p, disabled: model.switchInFlight) { model.switchTo(p.name) }
-            }
-        }
-    }
-
-    // MARK: - Active account header
-
-    private func header(_ p: ProfileStatus) -> some View {
-        HStack(alignment: .firstTextBaseline) {
-            Text(p.name).font(.title2).bold()
-            if p.isStale {
-                Text("· \(p.fetchStatus ?? "stale")").font(.caption).foregroundStyle(.secondary)
-            }
-            Spacer()
-            if let tier = p.tier {
-                Text(tier).font(.subheadline).foregroundStyle(.secondary)
-            } else if p.provider != "anthropic" {
-                Text(p.provider).font(.subheadline).foregroundStyle(.secondary)
-            }
-        }
-        .padding(.horizontal, 16)
-    }
-
-    // MARK: - Usage sections
-
-    @ViewBuilder
-    private func usage(_ p: ProfileStatus) -> some View {
-        if p.provider != "anthropic" {
-            // Third-party / api-key: the daemon only reports up/down, no windows.
-            availabilityRow(p).padding(.horizontal, 16)
-        } else {
-            VStack(spacing: 14) {
-                UsageRow(label: "Session", window: p.fiveHour, threshold: p.fallback?.threshold)
-                UsageRow(label: "Weekly", window: p.sevenDay, threshold: nil)
-                UsageRow(label: "Fable", window: p.fableWeek, threshold: nil)
-            }
-            .padding(.horizontal, 16)
-        }
-    }
-
-    private func availabilityRow(_ p: ProfileStatus) -> some View {
-        let available = p.thirdParty?.available
-        let (text, color): (String, Color) = {
-            switch available {
-            case .some(true): return ("Available", Theme.success)
-            case .some(false): return ("Unavailable", Theme.danger)
-            case .none: return ("No data yet", .secondary)
-            }
-        }()
-        return HStack(spacing: 8) {
-            Circle().fill(color).frame(width: 8, height: 8)
-            Text(text).font(.subheadline).foregroundStyle(.secondary)
-        }
-    }
-
-    // MARK: - Fallback chain (the signature element)
-
-    private func chainSection(_ status: DaemonStatus) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("Fallback chain").font(.subheadline).fontWeight(.semibold)
-                Spacer()
-                Text(status.wrapOff ? "wrap-off on" : "stay on last")
-                    .font(.caption).foregroundStyle(.tertiary)
-            }
-            if status.fallbackChain.isEmpty {
-                Text("None — add accounts below")
-                    .font(.footnote).foregroundStyle(.secondary)
-            } else {
-                ChainStrip(status: status)
-            }
-        }
-        .padding(.horizontal, 16)
-    }
-
-    // MARK: - Footer meta (last switch + version skew) — TECH-11
-
-    /// A quiet footer: the last executed switch (so the hero event is visible, not
-    /// buried in daemon.log) and a soft version-skew badge when the daemon's clauth
-    /// version differs from what this clauthbar targets.
-    @ViewBuilder
-    private func footerMeta(_ status: DaemonStatus) -> some View {
-        let skew = model.versionSkew
-        if status.lastSwitch != nil || skew != nil {
-            VStack(alignment: .leading, spacing: 4) {
-                Divider().padding(.vertical, 8)
-                if let ls = status.lastSwitch {
-                    HStack(spacing: 5) {
-                        Image(systemName: "arrow.left.arrow.right").font(.system(size: 9))
-                            .foregroundStyle(.tertiary)
-                        Text(lastSwitchText(ls)).font(.caption2).foregroundStyle(.secondary)
-                        Spacer(minLength: 0)
-                    }
-                }
-                if let daemonVersion = skew {
-                    HStack(spacing: 5) {
-                        Image(systemName: "arrow.up.circle").font(.system(size: 9))
-                            .foregroundStyle(Theme.warning)
-                        Text("daemon clauth \(daemonVersion); clauthbar targets \(StatusModel.expectedClauthVersion)")
-                            .font(.caption2).foregroundStyle(.secondary)
-                        Spacer(minLength: 0)
-                    }
-                }
-            }
-            .padding(.horizontal, 16)
-        }
-    }
-
-    /// "switched work → home · 2m ago (auto)" — coarse, quiet.
-    private func lastSwitchText(_ ls: LastSwitch) -> String {
-        let target = ls.to ?? "off"
-        let arrow = ls.from.map { "\($0) → \(target)" } ?? target
-        let via = ls.trigger == "user" ? "" : " (\(ls.trigger))"
-        if let when = Theme.parseISO(ls.at) {
-            let ago = agoText(Int(Date().timeIntervalSince(when)))
-            return "switched \(arrow) · \(ago)\(via)"
-        }
-        return "switched \(arrow)\(via)"
-    }
-
-    /// Coarse "N{m,h,d} ago" from a positive second count.
-    private func agoText(_ secs: Int) -> String {
-        if secs < 60 { return "just now" }
-        if secs < 3600 { return "\(secs / 60)m ago" }
-        if secs < 86_400 { return "\(secs / 3600)h ago" }
-        return "\(secs / 86_400)d ago"
-    }
-
-    // MARK: - Actions
-
-    private var actions: some View {
-        VStack(spacing: 1) {
-            ActionRow(icon: "arrow.clockwise", title: "Refresh now") { model.refresh() }
-            // Autostart opt-out (TECH-14 #42) — only in the packaged .app, where
-            // SMAppService can register; a no-op toggle in `swift run` would mislead.
-            if LoginItem.isAvailable {
-                Toggle(isOn: Binding(
-                    get: { LoginItem.isEnabled },
-                    set: { LoginItem.setEnabled($0) }
-                )) {
-                    HStack(spacing: 8) {
-                        Image(systemName: "power.circle").frame(width: 16)
-                        Text("Start at login")
-                        Spacer()
-                    }
-                }
-                .toggleStyle(.switch)
-                .controlSize(.mini)
-                .padding(.vertical, 5).padding(.horizontal, 8)
-            }
-            ActionRow(icon: "power", title: "Quit clauthbar") { NSApp.terminate(nil) }
-        }
-        .padding(.horizontal, 8)
-    }
-
-    // MARK: - Empty state
 
     private var emptyState: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -287,74 +184,10 @@ struct PanelView: View {
     }
 }
 
-// MARK: - Components
+// MARK: - Chain chips
 
-/// A switchable account tile: name, active state, a tiny 5h meter. Filled with
-/// the accent when active; tap to switch the global account.
-private struct AccountTile: View {
-    let p: ProfileStatus
-    var disabled: Bool = false
-    let onTap: () -> Void
-
-    var body: some View {
-        Button(action: onTap) {
-            VStack(spacing: 5) {
-                // FLOOR RULE (§4): names ≥ 13pt, never auto-shrunk — overflow
-                // truncates with tail + .help (the button already carries .help).
-                Text(p.name)
-                    .font(.body).fontWeight(p.active ? .semibold : .regular)
-                    .lineLimit(1).truncationMode(.tail)
-                UsageBar(
-                    pct: p.fiveHourPct,
-                    color: p.active ? Color.white.opacity(0.9) : Theme.usageColor(p.fiveHourPct, threshold: p.fallback?.threshold ?? 100),
-                    height: 3,
-                    threshold: p.fallback?.threshold
-                )
-            }
-            .padding(.vertical, 7).padding(.horizontal, 10)
-            .frame(maxWidth: .infinity)
-            .background(
-                p.active ? Theme.accent : Color.primary.opacity(0.06),
-                in: RoundedRectangle(cornerRadius: 9)
-            )
-            .foregroundStyle(p.active ? Color.white : Color.primary)
-        }
-        .buttonStyle(.plain)
-        .disabled(disabled)
-        .opacity(disabled && !p.active ? 0.5 : 1)
-        .help(p.active ? "Active account" : "Switch to \(p.name)")
-    }
-}
-
-/// One usage window: bold label, a thin bar, then `X% used` / `resets in …`.
-private struct UsageRow: View {
-    let label: String
-    let window: UsageWindow?
-    let threshold: Double?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(label).font(.subheadline).fontWeight(.semibold)
-            if let w = window {
-                UsageBar(pct: w.utilizationPct, color: Theme.usageColor(w.utilizationPct, threshold: threshold ?? 100), threshold: threshold)
-                HStack {
-                    Text("\(Int(w.utilizationPct.rounded()))% used")
-                        .font(.footnote).foregroundStyle(.secondary).monospacedDigit()
-                    Spacer()
-                    if let hint = Theme.resetHint(w.resetsAt) {
-                        Text(hint).font(.footnote).foregroundStyle(.secondary)
-                    }
-                }
-            } else {
-                UsageBar(pct: 0, color: Theme.track)
-                Text("no data yet").font(.footnote).foregroundStyle(.tertiary)
-            }
-        }
-    }
-}
-
-/// The fallback chain as capsule chips joined by arrows; the armed member (the
-/// one auto-switch would rotate away from) glows in the accent.
+/// The fallback chain as capsule chips joined by arrows; the armed member glows in
+/// sapphire (armed = auto-switch is watching it).
 private struct ChainStrip: View {
     let status: DaemonStatus
 
@@ -374,18 +207,17 @@ private struct ChainStrip: View {
         let armed = fb?.armed ?? false
         return HStack(spacing: 4) {
             if armed { Image(systemName: "bolt.fill").font(.system(size: 9)) }
-            Text(name).font(.caption).fontWeight(armed ? .semibold : .regular)
-            Text("\(Int(fb?.threshold ?? 95))%")
+            Text(name).font(.callout).fontWeight(armed ? .semibold : .regular)
+            Text("@\(Int(fb?.threshold ?? 95))")
                 .font(.system(size: 10)).foregroundStyle(.secondary).monospacedDigit()
         }
         .padding(.vertical, 3).padding(.horizontal, 8)
-        .background(
-            armed ? Theme.accent.opacity(0.18) : Color.primary.opacity(0.05),
-            in: Capsule()
-        )
-        .foregroundStyle(armed ? Theme.accent : Color.primary)
+        .background(armed ? Theme.sapphire.opacity(0.18) : Color.primary.opacity(0.05), in: Capsule())
+        .foregroundStyle(armed ? Theme.sapphire : Color.primary)
     }
 }
+
+// MARK: - Action row
 
 /// A full-width action row: SF Symbol + title, with a hover highlight.
 struct ActionRow: View {
@@ -398,15 +230,12 @@ struct ActionRow: View {
         Button(action: action) {
             HStack(spacing: 8) {
                 Image(systemName: icon).frame(width: 16)
-                Text(title)
+                Text(title).font(.body).lineLimit(1)
                 Spacer()
             }
             .padding(.vertical, 5).padding(.horizontal, 8)
             .frame(maxWidth: .infinity)
-            .background(
-                hovering ? Color.primary.opacity(0.08) : Color.clear,
-                in: RoundedRectangle(cornerRadius: 6)
-            )
+            .background(hovering ? Color.primary.opacity(0.08) : Color.clear, in: RoundedRectangle(cornerRadius: 6))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

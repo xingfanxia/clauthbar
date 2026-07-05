@@ -11,11 +11,12 @@ final class StatusModelTests: XCTestCase {
         try JSONDecoder().decode(DaemonStatus.self, from: Data(json.utf8))
     }
 
-    // MARK: orderedProfiles — active pinned first, otherwise file order.
+    // MARK: listProfiles — STABLE FILE ORDER (CBAR-4 §2: rows never reorder; only
+    // the active badge + inspection ring move).
 
     @MainActor
-    func testOrderedProfilesPinsActiveFirst() throws {
-        // Active is the SECOND profile in file order → must be reordered to front.
+    func testListProfilesKeepsFileOrderRegardlessOfActive() throws {
+        // Active is the SECOND profile — the list must NOT reorder it to the front.
         let status = try decode(#"""
         {"schema":1,"generated_at":"2026-07-04T05:00:00+00:00","active_profile":"b",
          "wrap_off":false,"refresh_interval_ms":90000,
@@ -23,18 +24,26 @@ final class StatusModelTests: XCTestCase {
                      {"name":"c","active":false}]}
         """#)
         let model = StatusModel(preview: status)
-        XCTAssertEqual(model.orderedProfiles.map(\.name), ["b", "a", "c"])
+        XCTAssertEqual(model.listProfiles.map(\.name), ["a", "b", "c"])
     }
 
     @MainActor
-    func testOrderedProfilesStableWhenActiveAlreadyFirst() throws {
+    func testInspectionDefaultsToActiveThenFollowsSelection() throws {
         let status = try decode(#"""
-        {"schema":1,"generated_at":"2026-07-04T05:00:00+00:00","active_profile":"a",
+        {"schema":1,"generated_at":"2026-07-04T05:00:00+00:00","active_profile":"b",
          "wrap_off":false,"refresh_interval_ms":90000,
-         "profiles":[{"name":"a","active":true},{"name":"b","active":false}]}
+         "profiles":[{"name":"a","active":false},{"name":"b","active":true}]}
         """#)
         let model = StatusModel(preview: status)
-        XCTAssertEqual(model.orderedProfiles.map(\.name), ["a", "b"])
+        // Default inspection = the active account.
+        XCTAssertEqual(model.inspected?.name, "b")
+        XCTAssertTrue(model.isInspected("b"))
+        // Inspecting a row retargets without touching the daemon.
+        model.inspect("a")
+        XCTAssertEqual(model.inspected?.name, "a")
+        // Reset returns to active.
+        model.resetInspection()
+        XCTAssertEqual(model.inspected?.name, "b")
     }
 
     // (staleness threshold moved to LivenessLadder — see LivenessLadderTests.)
