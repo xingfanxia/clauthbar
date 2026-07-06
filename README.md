@@ -14,6 +14,39 @@ ccsbar is a thin UI over clauth's daemon: it reads `~/.clauth/status.json`
 `~/.clauth/clauthd.sock` (with a `clauth <name>` shell fallback) to switch. It
 owns no credentials and runs no network of its own.
 
+<p align="center">
+  <img src="docs/media/panel-healthy.png" width="340" alt="ccsbar panel — forecast strip, usage bars, chain rail" />
+</p>
+
+The panel, top to bottom: the **forecast strip** ("Watching xfx — would switch
+to cl-ax at 95%"), the **account list** with live 5h / 7d / Fable bars, the
+**detail card** for the inspected account, and the **chain rail** showing the
+ordered fallback. Three states it has a loud, fixed home for:
+
+| Healthy | Login dropped | Window spent |
+|---|---|---|
+| ![healthy](docs/media/panel-healthy.png) | ![reauth](docs/media/panel-reauth.png) | ![spent](docs/media/panel-spent.png) |
+
+### What ccsbar is a window into
+
+The whole point is what `clauth daemon` does underneath: when the active
+account's 5-hour window fills, it rewrites **one macOS Keychain item** and the
+next request from your running `claude` session quietly authenticates as the
+next account — no restart, no re-login.
+
+<p align="center">
+  <img src="docs/media/hot-swap.gif" width="640" alt="hot-swap animation — the daemon rewrites one Keychain item under a live session" />
+</p>
+
+<p align="center">
+  <img src="docs/media/infographic-hotswap.jpg" width="640" alt="how the Keychain hot-swap works" />
+</p>
+
+ccsbar exists to make that invisible move **visible and deliberate** — it
+forecasts the next switch before it fires, flashes "⇄ rotated to X" when it does,
+and lets you switch by hand when you want to. The full story:
+[I Taught My Claude Accounts to Rotate Themselves](https://blog.ax0x.ai/hot-swapping-claude-logins).
+
 ## Requirements
 
 - macOS 14+ (Sonoma), Swift 6 toolchain (Xcode 16+).
