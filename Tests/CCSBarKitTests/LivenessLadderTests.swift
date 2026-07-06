@@ -1,6 +1,6 @@
 import XCTest
 
-@testable import ClauthBarKit
+@testable import CCSBarKit
 
 /// The graded freshness ladder (CBAR4-2 / design §8): live < 5s, syncing 5–15s,
 /// dead ≥ 15s — keyed to the 1s write cadence, NOT refresh_interval_ms. The

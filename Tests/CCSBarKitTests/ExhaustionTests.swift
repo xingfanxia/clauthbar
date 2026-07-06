@@ -1,7 +1,7 @@
 import Foundation
 import XCTest
 
-@testable import ClauthBarKit
+@testable import CCSBarKit
 
 /// `ProfileStatus.spentTag` — the single source of truth for "this account has hit a
 /// usage cap" (design §5 danger role). The row pill, the muted name, and VoiceOver all

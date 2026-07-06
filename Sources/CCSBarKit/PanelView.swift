@@ -130,7 +130,7 @@ struct PanelView: View {
                     .font(.caption).foregroundStyle(.tertiary)
             }
             if let skew = model.versionSkew {
-                Text("daemon clauth \(skew); clauthbar targets \(StatusModel.expectedClauthVersion)")
+                Text("daemon clauth \(skew); ccsbar targets \(StatusModel.expectedClauthVersion)")
                     .font(.caption2).foregroundStyle(.secondary)
             }
         }
@@ -155,7 +155,7 @@ struct PanelView: View {
                 .toggleStyle(.switch).controlSize(.mini)
                 .padding(.vertical, 5).padding(.horizontal, 8)
             }
-            ActionRow(icon: "power", title: "Quit clauthbar · daemon keeps running") { NSApp.terminate(nil) }
+            ActionRow(icon: "power", title: "Quit ccsbar · daemon keeps running") { NSApp.terminate(nil) }
                 .keyboardShortcut("q", modifiers: .command)
                 .help("The clauth daemon keeps running — auto-switch continues.")
         }
@@ -210,12 +210,12 @@ struct PanelView: View {
 
     private func outOfDateState(_ schema: Int) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Label("clauthbar out of date", systemImage: "arrow.up.circle")
+            Label("ccsbar out of date", systemImage: "arrow.up.circle")
                 .font(.subheadline).foregroundStyle(Theme.warning)
-            Text("The daemon writes status.json schema \(schema); this clauthbar reads \(supportedSchema). Update clauthbar.")
+            Text("The daemon writes status.json schema \(schema); this ccsbar reads \(supportedSchema). Update ccsbar.")
                 .font(.caption).foregroundStyle(.secondary)
             Divider().padding(.vertical, 6)
-            ActionRow(icon: "power", title: "Quit clauthbar") { NSApp.terminate(nil) }
+            ActionRow(icon: "power", title: "Quit ccsbar") { NSApp.terminate(nil) }
         }
         .padding(.horizontal, 16)
     }
@@ -227,7 +227,7 @@ struct PanelView: View {
             Text("Start it with `clauth daemon` (or the LaunchAgent), then reopen.")
                 .font(.caption).foregroundStyle(.tertiary)
             Divider().padding(.vertical, 6)
-            ActionRow(icon: "power", title: "Quit clauthbar") { NSApp.terminate(nil) }
+            ActionRow(icon: "power", title: "Quit ccsbar") { NSApp.terminate(nil) }
         }
         .padding(.horizontal, 16)
     }

@@ -1,4 +1,4 @@
-# clauthbar
+# ccsbar — Claude Code Switcher Bar
 
 A native macOS menu-bar companion for [clauth](https://github.com/xingfanxia/clauth)
 — glance at every Claude Code account's 5-hour usage, see what auto-switch will do
@@ -9,7 +9,7 @@ The panel is **inspect-first** ("Preflight"): a single click on any account
 switching is a distinct verb in the detail card, guarded so a Keychain rewrite
 can't silently strand a live Claude session.
 
-clauthbar is a thin UI over clauth's daemon: it reads `~/.clauth/status.json`
+ccsbar is a thin UI over clauth's daemon: it reads `~/.clauth/status.json`
 (written every tick by `clauth daemon`) for display and drives
 `~/.clauth/clauthd.sock` (with a `clauth <name>` shell fallback) to switch. It
 owns no credentials and runs no network of its own.
@@ -23,12 +23,12 @@ owns no credentials and runs no network of its own.
   dist/macos/daemon-install.sh      # LaunchAgent (runs at login), or:
   clauth daemon                     # foreground, for a quick try
   ```
-  clauthbar reads the daemon's liveness distinctly: if the daemon was never
+  ccsbar reads the daemon's liveness distinctly: if the daemon was never
   started (no `status.json`), the menu shows **"clauth daemon not running"**; if
   it wrote the file and then died, the panel keeps the last data under a loud
   **"Daemon stalled — data from HH:MM"** banner (so a frozen % never reads as
   current) and the menu-bar glyph dims; if the daemon's `status.json` schema is
-  newer than this build understands, it shows **"clauthbar out of date"** rather
+  newer than this build understands, it shows **"ccsbar out of date"** rather
   than a misleading "not running".
 
 ## Run (development)
@@ -82,7 +82,7 @@ edit (display works off `status.json` alone).
 
 **Dropped-login recovery (AUTH-3):** OAuth logins sometimes drop silently. The daemon
 flags such an account `auth_broken` in `status.json` the moment a token refresh fails
-with a dead refresh token, and clauthbar surfaces it — a **login-expired** badge on the
+with a dead refresh token, and ccsbar surfaces it — a **login-expired** badge on the
 row and, in the detail card, a **"Log in again"** verb that spawns `clauth login <name>`
 (a self-contained browser OAuth sign-in that mints fresh tokens and clears the flag). It
 runs the same whether the daemon is up or down, so a dropped login is recoverable without
@@ -94,9 +94,9 @@ renew, so the reauth affordances are hidden for them.
 ## Build a real app
 
 ```sh
-Scripts/package_app.sh        # → build/clauthbar.app (LSUIElement, ad-hoc signed)
-open build/clauthbar.app      # run it, or:
-cp -R build/clauthbar.app /Applications/   # install it
+Scripts/package_app.sh        # → build/ccsbar.app (LSUIElement, ad-hoc signed)
+open build/ccsbar.app      # run it, or:
+cp -R build/ccsbar.app /Applications/   # install it
 ```
 
 **Autostart:** on first launch the app registers itself as a login item via
@@ -181,6 +181,6 @@ Deferred:
 | `AppMain.swift` | `@main` — `MenuBarExtra(.window)` app + `--snapshot` render mode |
 | `Snapshot.swift` | headless `ImageRenderer` panel→PNG harness (design-review aid) |
 
-The visual spec is **`docs/clauthbar/CBAR-4-DESIGN.md`** in the clauth repo (the
-binding "Preflight" design); `docs/clauthbar/DESIGN.md` there covers the original
+The visual spec is **`docs/ccsbar/CBAR-4-DESIGN.md`** in the clauth repo (the
+binding "Preflight" design); `docs/ccsbar/DESIGN.md` there covers the original
 `MenuBarExtra(.window)` decision and the daemon IPC contract.

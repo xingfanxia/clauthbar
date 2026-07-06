@@ -3,14 +3,14 @@ import Foundation
 /// The single field we must read BEFORE a full decode: a schema-2 status.json
 /// would fail the `DaemonStatus` decode below, and without this probe that failure
 /// is indistinguishable from "no daemon" — sending the operator to debug launchd
-/// instead of updating clauthbar (TECH-4 schema gate, #8/#29/#40).
+/// instead of updating ccsbar (TECH-4 schema gate, #8/#29/#40).
 struct SchemaProbe: Decodable, Sendable {
     let schema: Int
 }
 
-/// The `status.json` schema this clauthbar build understands. A newer daemon
+/// The `status.json` schema this ccsbar build understands. A newer daemon
 /// bumps the on-disk `schema`; the gate turns that into an explicit
-/// "clauthbar out of date" state instead of a silent blank panel.
+/// "ccsbar out of date" state instead of a silent blank panel.
 let supportedSchema = 1
 
 /// Mirror of `~/.clauth/status.json` (schema 1), written by `clauth daemon`.

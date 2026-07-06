@@ -1,7 +1,7 @@
 import Foundation
 import XCTest
 
-@testable import ClauthBarKit
+@testable import CCSBarKit
 
 /// TECH-14 (e) single-instance guard + (f) login-item automation. The system-bound
 /// halves (NSRunningApplication enumeration, SMAppService registration) are
@@ -11,8 +11,8 @@ final class AutostartTests: XCTestCase {
     // MARK: - Single-instance flock core (#33)
 
     func testFlockIsExclusiveAndReleases() {
-        // A throwaway lock path — never the real ~/.clauth/clauthbar.lock.
-        let path = NSTemporaryDirectory() + "clauthbar-test-\(getpid())-\(ObjectIdentifier(self).hashValue).lock"
+        // A throwaway lock path — never the real ~/.clauth/ccsbar.lock.
+        let path = NSTemporaryDirectory() + "ccsbar-test-\(getpid())-\(ObjectIdentifier(self).hashValue).lock"
         defer { unlink(path) }
 
         // First acquirer takes the exclusive lock.
@@ -20,7 +20,7 @@ final class AutostartTests: XCTestCase {
             return XCTFail("first tryFlock must acquire")
         }
         // A second attempt (a distinct open file description) is blocked — this is
-        // the "two clauthbars side by side" case the guard prevents.
+        // the "two ccsbars side by side" case the guard prevents.
         XCTAssertEqual(SingleInstance.tryFlock(at: path), .held)
 
         // Releasing (closing the fd) frees the slot for a later instance.
@@ -34,7 +34,7 @@ final class AutostartTests: XCTestCase {
     func testFlockUnavailableOnUnwritablePath() {
         // A path under a non-existent directory can't be opened → .unavailable,
         // which acquire() treats as "can't enforce, don't block the user".
-        let path = "/clauthbar-nonexistent-dir-\(getpid())/x.lock"
+        let path = "/ccsbar-nonexistent-dir-\(getpid())/x.lock"
         XCTAssertEqual(SingleInstance.tryFlock(at: path), .unavailable)
     }
 

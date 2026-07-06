@@ -1,7 +1,7 @@
 import Foundation
 import XCTest
 
-@testable import ClauthBarKit
+@testable import CCSBarKit
 
 /// The forecast engine (CBAR4-2) is the truthfulness core — a contractual mirror
 /// of clauth `fallback.rs::next_target`. These fixture tests pin the pass order

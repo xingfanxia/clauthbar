@@ -3,7 +3,7 @@ import SwiftUI
 
 /// Headless render of `PanelView` (with mock data) to a PNG — a dev aid so the
 /// panel's look can be reviewed without opening the menu bar. Invoked via
-/// `clauthbar --snapshot <path>`; never part of the normal app run.
+/// `ccsbar --snapshot <path>`; never part of the normal app run.
 enum Snapshot {
     /// Back-compat: `--snapshot <path>` renders the healthy panel.
     @MainActor

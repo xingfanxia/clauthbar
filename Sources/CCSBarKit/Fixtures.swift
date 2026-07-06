@@ -1,6 +1,6 @@
 import Foundation
 
-/// The checked-in `status.json` contract fixture (Sources/ClauthBarKit/Fixtures/
+/// The checked-in `status.json` contract fixture (Sources/CCSBarKit/Fixtures/
 /// status.json), bundled as a resource. It is the SINGLE source of truth for
 /// both the `--snapshot` dev render and the decode contract test — so the two can
 /// never drift, and a Rust-side shape change is caught by the test before it

@@ -1,9 +1,9 @@
 import AppKit
 
-/// Guards against two clauthbars running at once (TECH-14 #33). The README ships
+/// Guards against two ccsbars running at once (TECH-14 #33). The README ships
 /// two run modes, so the guard has two mechanisms: a packaged `.app` has a bundle
 /// id, so the OS can enumerate running copies; bare `swift run` has no bundle id,
-/// so it falls back to an advisory `flock` on `~/.clauth/clauthbar.lock`.
+/// so it falls back to an advisory `flock` on `~/.clauth/ccsbar.lock`.
 ///
 /// `acquire()` returns false when another instance already owns the slot (the
 /// caller should then exit). For the packaged case it calls `activate()` on the
@@ -57,7 +57,7 @@ enum SingleInstance {
     private static func acquireByFlock() -> Bool {
         let dir = DaemonClient.clauthDir
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let path = dir.appendingPathComponent("clauthbar.lock").path
+        let path = dir.appendingPathComponent("ccsbar.lock").path
         switch tryFlock(at: path) {
         case .acquired(let fd):
             lockFD = fd

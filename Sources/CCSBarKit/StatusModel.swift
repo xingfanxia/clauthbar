@@ -60,10 +60,10 @@ final class StatusModel: ObservableObject {
     /// shimmer (§7).
     var configBusy: Bool { configInFlight > 0 }
 
-    /// The clauth version this clauthbar build targets. A daemon reporting a
+    /// The clauth version this ccsbar build targets. A daemon reporting a
     /// different `clauth_version` raises a SOFT skew badge (informational — the
     /// schema gate in TECH-4 handles hard read-format incompatibility). Bump this
-    /// when clauthbar is validated against a new clauth release.
+    /// when ccsbar is validated against a new clauth release.
     static let expectedClauthVersion = "0.7.1"
 
     private var timer: Timer?
@@ -374,7 +374,7 @@ final class StatusModel: ObservableObject {
     var daemonReachable: Bool { liveness == .ok && DaemonClient.daemonSocketExists }
 
     /// A soft version-skew signal (TECH-11): the daemon's clauth version when it
-    /// differs from what this clauthbar build targets, else nil.
+    /// differs from what this ccsbar build targets, else nil.
     var versionSkew: String? {
         guard let v = status?.clauthVersion, v != Self.expectedClauthVersion else { return nil }
         return v

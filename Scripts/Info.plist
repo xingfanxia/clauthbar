@@ -3,13 +3,13 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleName</key>
-    <string>clauthbar</string>
+    <string>ccsbar</string>
     <key>CFBundleDisplayName</key>
-    <string>clauthbar</string>
+    <string>ccsbar</string>
     <key>CFBundleIdentifier</key>
-    <string>com.xingfanxia.clauthbar</string>
+    <string>com.xingfanxia.ccsbar</string>
     <key>CFBundleExecutable</key>
-    <string>clauthbar</string>
+    <string>ccsbar</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
@@ -27,6 +27,6 @@
     <key>LSMultipleInstancesProhibited</key>
     <true/>
     <key>NSHumanReadableCopyright</key>
-    <string>clauthbar — menu-bar companion for clauth</string>
+    <string>ccsbar — menu-bar companion for clauth</string>
 </dict>
 </plist>

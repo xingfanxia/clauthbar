@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # regen-fixture.sh — refresh the checked-in status.json contract fixture from a
-# live clauth daemon. The fixture (Sources/ClauthBarKit/Fixtures/status.json) is
+# live clauth daemon. The fixture (Sources/CCSBarKit/Fixtures/status.json) is
 # the single source for both the --snapshot render and the decode contract test,
 # so it must stay a faithful sample of what `clauth status --json` emits.
 #
@@ -10,7 +10,7 @@
 # Usage: Scripts/regen-fixture.sh
 set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-dst="$repo_root/Sources/ClauthBarKit/Fixtures/status.json"
+dst="$repo_root/Sources/CCSBarKit/Fixtures/status.json"
 
 clauth="$(command -v clauth || echo "$HOME/.cargo/bin/clauth")"
 if [ ! -x "$clauth" ]; then

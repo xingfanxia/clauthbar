@@ -1,6 +1,6 @@
 import XCTest
 
-@testable import ClauthBarKit
+@testable import CCSBarKit
 
 /// The switch state machine (CBAR4-3), driven purely by events — the design's
 /// STATE 3 flow: live-session arm-confirm, instant refusal/unreachable failure,

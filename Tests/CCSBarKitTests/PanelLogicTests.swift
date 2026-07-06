@@ -1,7 +1,7 @@
 import Foundation
 import XCTest
 
-@testable import ClauthBarKit
+@testable import CCSBarKit
 
 /// The CBAR4-4 presentation logic on `StatusModel` (forecast sentence, chain line,
 /// ordinals, strip helpers) — pure decisions over an injected status.

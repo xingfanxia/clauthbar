@@ -1,7 +1,7 @@
 import Foundation
 import XCTest
 
-@testable import ClauthBarKit
+@testable import CCSBarKit
 
 /// The command-outcome honesty layer (TECH-11): a daemon reply must classify into
 /// three DISTINCT outcomes so a rejection is never mistaken for daemon-absence (and

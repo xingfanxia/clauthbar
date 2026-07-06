@@ -1,7 +1,7 @@
 import Foundation
 import XCTest
 
-@testable import ClauthBarKit
+@testable import CCSBarKit
 
 /// The model's pure decisions: the switcher's active-first tile order, the
 /// staleness threshold (TECH-4 liveness), and that the preview liveness drives

@@ -2,10 +2,10 @@ import SwiftUI
 
 /// Process entry (the executable target's `@main` calls this). Normally runs the
 /// menu-bar app; `--snapshot <path>` renders the panel to a PNG and exits (a dev
-/// aid, see `Snapshot`). Public so the thin `clauthbar` executable can invoke it;
-/// everything else in ClauthBarKit stays internal for `@testable import`.
+/// aid, see `Snapshot`). Public so the thin `ccsbar` executable can invoke it;
+/// everything else in CCSBarKit stays internal for `@testable import`.
 @MainActor
-public func runClauthBar() {
+public func runCCSBar() {
     let args = CommandLine.arguments
     // `--snapshot <path>` renders the healthy panel to a PNG.
     if let i = args.firstIndex(of: "--snapshot"), i + 1 < args.count {
@@ -16,7 +16,7 @@ public func runClauthBar() {
     // to a temp PNG and prints the resolved state (TECH-4 verification harness).
     if let arg = args.first(where: { $0.hasPrefix("--snapshot=") }) {
         let variant = String(arg.dropFirst("--snapshot=".count))
-        let path = NSTemporaryDirectory() + "clauthbar-snapshot-\(variant).png"
+        let path = NSTemporaryDirectory() + "ccsbar-snapshot-\(variant).png"
         Snapshot.render(variant: variant, to: path)
         return
     }
@@ -24,16 +24,16 @@ public func runClauthBar() {
     // a live app, so it must NOT trip the guard): refuse to be a second instance,
     // then register for autostart so the panel survives a reboot (TECH-14 #33/#42).
     guard SingleInstance.acquire() else {
-        return // another clauthbar already owns the slot — bow out
+        return // another ccsbar already owns the slot — bow out
     }
     LoginItem.registerIfNeeded()
-    ClauthBarApp.main()
+    CCSBarApp.main()
 }
 
 /// A menu-bar-only SwiftUI app (`LSUIElement` in Info.plist keeps it out of the
 /// Dock). `MenuBarExtra(.window)` gives a translucent SwiftUI panel — the same
 /// style CodexBar uses — instead of a plain `NSMenu`.
-struct ClauthBarApp: App {
+struct CCSBarApp: App {
     @StateObject private var model = StatusModel()
 
     var body: some Scene {

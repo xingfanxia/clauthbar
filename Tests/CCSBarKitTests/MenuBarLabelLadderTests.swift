@@ -1,7 +1,7 @@
 import Foundation
 import XCTest
 
-@testable import ClauthBarKit
+@testable import CCSBarKit
 
 /// The menu-bar label ladder (CBAR4-6, design §6): one test per rung + collision
 /// precedence. All state is in SF Symbol SHAPE (never color); the % always means

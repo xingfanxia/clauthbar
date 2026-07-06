@@ -1,7 +1,7 @@
 import Foundation
 import XCTest
 
-@testable import ClauthBarKit
+@testable import CCSBarKit
 
 /// AUTH-3 reauth flow: the pure outcome→message mapping (`reauthFailureMessage`)
 /// and the in-flight guard. The spawn itself (`clauth login`) is never invoked —

@@ -1,7 +1,7 @@
 import Foundation
 import XCTest
 
-@testable import ClauthBarKit
+@testable import CCSBarKit
 
 /// CBAR4-5 config-surface logic (design §7): the shared `ChainEdit` vocabulary and
 /// the armed-member removal gate. Pure decisions over an injected status — no socket

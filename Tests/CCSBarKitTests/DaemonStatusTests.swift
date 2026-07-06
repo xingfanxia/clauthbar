@@ -1,7 +1,7 @@
 import Foundation
 import XCTest
 
-@testable import ClauthBarKit
+@testable import CCSBarKit
 
 /// The cross-repo contract: the checked-in `status.json` fixture (the same one the
 /// `--snapshot` render uses) must decode through `DaemonStatus`. If the Rust

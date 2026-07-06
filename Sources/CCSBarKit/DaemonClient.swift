@@ -3,7 +3,7 @@ import os
 
 /// The outcome of reading `status.json` — distinguishes the states the panel must
 /// render differently (TECH-4): a live snapshot, no file yet, an unsupported
-/// schema (clauthbar out of date), or a corrupt/partial decode.
+/// schema (ccsbar out of date), or a corrupt/partial decode.
 enum StatusRead: Sendable {
     case ok(DaemonStatus)
     case fileMissing
@@ -44,12 +44,12 @@ enum DaemonClient {
     static var statusURL: URL { clauthDir.appendingPathComponent("status.json") }
     static var socketPath: String { clauthDir.appendingPathComponent("clauthd.sock").path }
 
-    private static let log = Logger(subsystem: "com.clauth.clauthbar", category: "daemon-client")
+    private static let log = Logger(subsystem: "com.clauth.ccsbar", category: "daemon-client")
 
     // MARK: - Status (file)
 
     /// Read status.json into one of four outcomes (TECH-4). The schema is probed
-    /// BEFORE the full decode so a future schema bump reads as "clauthbar out of
+    /// BEFORE the full decode so a future schema bump reads as "ccsbar out of
     /// date", not "no daemon"; a genuine decode failure (corrupt/partial write) is
     /// logged (not silently swallowed) and reported distinctly from a missing file.
     static func readStatus() -> StatusRead {
@@ -316,7 +316,7 @@ enum DaemonClient {
 
     /// Spawn `clauth daemon` for the dead-banner [Start daemon] button (design
     /// §3.13). Best-effort — returns whether a binary was found to launch. The
-    /// spawn is a CHILD of clauthbar (not fully detached); the durable, supervised
+    /// spawn is a CHILD of ccsbar (not fully detached); the durable, supervised
     /// relaunch is the operator's LaunchAgent, so this is an in-session relight, not
     /// a substitute for it.
     @discardableResult

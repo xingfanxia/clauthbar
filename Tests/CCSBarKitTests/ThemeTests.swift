@@ -1,6 +1,6 @@
 import XCTest
 
-@testable import ClauthBarKit
+@testable import CCSBarKit
 
 /// Pure helpers that a "cleanup" could silently break — `parseISO`'s three-branch
 /// microsecond fallback (if it regresses, `resetHint` returns nil and every reset

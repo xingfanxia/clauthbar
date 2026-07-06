@@ -2,28 +2,28 @@
 import PackageDescription
 
 let package = Package(
-    name: "clauthbar",
+    name: "ccsbar",
     platforms: [.macOS(.v14)],
     targets: [
         // All app logic lives in the library so the test target can
-        // `@testable import ClauthBarKit` and exercise the pure, regression-prone
+        // `@testable import CCSBarKit` and exercise the pure, regression-prone
         // functions (parseISO / resetHint / usageColor / fableWeek / decode) that
         // the executable alone couldn't expose to tests.
         .target(
-            name: "ClauthBarKit",
-            path: "Sources/ClauthBarKit",
+            name: "CCSBarKit",
+            path: "Sources/CCSBarKit",
             resources: [.copy("Fixtures/status.json")]
         ),
-        // The thin executable: just `@main` → `runClauthBar()`.
+        // The thin executable: just `@main` → `runCCSBar()`.
         .executableTarget(
-            name: "clauthbar",
-            dependencies: ["ClauthBarKit"],
-            path: "Sources/clauthbar"
+            name: "ccsbar",
+            dependencies: ["CCSBarKit"],
+            path: "Sources/ccsbar"
         ),
         .testTarget(
-            name: "ClauthBarKitTests",
-            dependencies: ["ClauthBarKit"],
-            path: "Tests/ClauthBarKitTests"
+            name: "CCSBarKitTests",
+            dependencies: ["CCSBarKit"],
+            path: "Tests/CCSBarKitTests"
         ),
     ]
 )

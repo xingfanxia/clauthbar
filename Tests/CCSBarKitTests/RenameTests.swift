@@ -1,7 +1,7 @@
 import Foundation
 import XCTest
 
-@testable import ClauthBarKit
+@testable import CCSBarKit
 
 /// Profile-rename flow: the pure client-side name validation
 /// (`renameValidationError`, which mirrors the daemon's `validate_profile_name`)

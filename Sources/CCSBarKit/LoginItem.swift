@@ -1,9 +1,9 @@
 import Foundation
 import ServiceManagement
 
-/// Registers clauthbar as a macOS login item so its monitoring surface returns
+/// Registers ccsbar as a macOS login item so its monitoring surface returns
 /// after a reboot (TECH-14 #42) — without it, a macOS update reboot silently
-/// leaves the daemon running (its own LaunchAgent) but clauthbar gone, so the
+/// leaves the daemon running (its own LaunchAgent) but ccsbar gone, so the
 /// operator loses every human-facing window into the daemon.
 ///
 /// `SMAppService.mainApp` needs a real app bundle; bare `swift run` has no bundle
@@ -14,7 +14,7 @@ enum LoginItem {
     /// AND `swift test` (which runs under the xctest tool's own bundle id) safe.
     static var isAvailable: Bool { AppBundle.isMainApp }
 
-    /// Whether clauthbar is set to launch at login (false when unavailable, e.g.
+    /// Whether ccsbar is set to launch at login (false when unavailable, e.g.
     /// dev/test). `.requiresApproval` (macOS common on first register — the user
     /// must flip it on in System Settings › Login Items) counts as ON, else the
     /// panel Toggle would read false and snap back the instant the user enables it.
@@ -34,7 +34,7 @@ enum LoginItem {
         do {
             try SMAppService.mainApp.register()
         } catch {
-            NSLog("clauthbar: login-item registration failed: \(error.localizedDescription)")
+            NSLog("ccsbar: login-item registration failed: \(error.localizedDescription)")
         }
     }
 
@@ -48,10 +48,10 @@ enum LoginItem {
             if on { try SMAppService.mainApp.register() }
             else { try SMAppService.mainApp.unregister() }
         } catch {
-            NSLog("clauthbar: login-item toggle failed: \(error.localizedDescription)")
+            NSLog("ccsbar: login-item toggle failed: \(error.localizedDescription)")
         }
     }
 
     /// Persists the user's autostart choice; absent = first launch (auto-register).
-    private static let userChoiceKey = "clauthbar.startAtLogin"
+    private static let userChoiceKey = "ccsbar.startAtLogin"
 }
