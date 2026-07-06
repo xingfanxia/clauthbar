@@ -84,16 +84,19 @@ enum Snapshot {
     /// pinned to `"broken"` — the AUTH-3 dropped-login case. Returns (status, name)
     /// so the caller inspects exactly the broken row, whose detail card then shows the
     /// reauth surface ("login expired · Log in again").
-    private static func fixtureAuthBroken(from data: Data) -> (DaemonStatus, String)? {
+    private static func fixtureAuthBroken(from data: Data, active: Bool) -> (DaemonStatus, String)? {
         guard var dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               var profiles = dict["profiles"] as? [[String: Any]],
               // Only OAuth (anthropic) accounts ever go auth_broken — mark one of those,
-              // never a third-party api-key row (which has no login to renew).
+              // never a third-party api-key row (which has no login to renew). `active`
+              // selects whether to break the ACTIVE account (the urgent case: its running
+              // sessions are already failing) or a non-active one.
               let idx = profiles.firstIndex(where: {
-                  ($0["active"] as? Bool) != true && ($0["provider"] as? String ?? "anthropic") == "anthropic"
+                  (($0["active"] as? Bool) == true) == active
+                      && ($0["provider"] as? String ?? "anthropic") == "anthropic"
               })
         else {
-            FileHandle.standardError.write(Data("snapshot[reauth]: no non-active anthropic profile to break\n".utf8))
+            FileHandle.standardError.write(Data("snapshot[reauth]: no \(active ? "active" : "non-active") anthropic profile to break\n".utf8))
             return nil
         }
         var p = profiles[idx]
@@ -122,7 +125,8 @@ enum Snapshot {
         }
         let nonActive = mock.profiles.first { !$0.active }?.name ?? mock.profiles.first?.name ?? ""
         let exhausted = fixtureExhausted(from: data)
-        let broken = fixtureAuthBroken(from: data)
+        let broken = fixtureAuthBroken(from: data, active: false)
+        let brokenActive = fixtureAuthBroken(from: data, active: true)
 
         // (status, liveness, inspected, phase) per variant.
         let (status, liveness, inspected, phase): (DaemonStatus?, StatusModel.Liveness, String?, SwitchMachine.Phase) = {
@@ -133,6 +137,9 @@ enum Snapshot {
             case "no-fable": return (fixtureWithoutFable(from: data) ?? mock, .ok, nil, .idle)
             case "spent": return (exhausted?.0 ?? mock, .ok, exhausted?.1 ?? nonActive, .idle)
             case "reauth": return (broken?.0 ?? mock, .ok, broken?.1 ?? nonActive, .idle)
+            // The ACTIVE account is the one broken — inspect it to prove the detail card
+            // shows the reauth verb (not the "Active account" readout) for an active drop.
+            case "reauth-active": return (brokenActive?.0 ?? mock, .ok, brokenActive?.1 ?? nonActive, .idle)
             case "mid-switch": return (mock, .ok, nonActive, .pending(target: nonActive))
             case "daemon-dead", "dead", "stale": return (mock, .stalled(since: "05:00"), nil, .idle)
             case "schema2": return (nil, .outOfDate(schema: 2), nil, .idle)

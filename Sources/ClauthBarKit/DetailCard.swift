@@ -92,13 +92,17 @@ struct DetailCard: View {
     // MARK: - The one switch surface (§2 / §3.5-3.8)
 
     @ViewBuilder private var switchSurface: some View {
-        if p.active {
-            activeState
-        } else if p.authBroken && p.provider == "anthropic" {
-            // Only OAuth accounts have a browser login to renew — the daemon never
-            // marks a third-party api-key profile auth_broken, but guard anyway so the
-            // reauth surface and the context-menu item agree on who can reauth.
+        // A broken login OUTRANKS the active-state readout: an ACTIVE account whose
+        // OAuth dropped is the most urgent reauth case (the running claude sessions are
+        // already failing on it), so the recovery verb must show even when p.active —
+        // otherwise the one account you can't switch away from hides its only fix.
+        // Only OAuth (anthropic) accounts have a browser login to renew; the daemon
+        // never marks a third-party api-key profile auth_broken, but guard anyway so the
+        // reauth surface and the context-menu item agree on who can reauth.
+        if p.authBroken && p.provider == "anthropic" {
             reauthSurface
+        } else if p.active {
+            activeState
         } else {
             // One button for both the live and offline paths so the arm-confirm cycle
             // works in BOTH: `switchTo` applies the live-session guard regardless of
