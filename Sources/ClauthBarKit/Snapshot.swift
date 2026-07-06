@@ -9,6 +9,21 @@ enum Snapshot {
     @MainActor
     static func render(to path: String) { render(variant: "healthy", to: path) }
 
+    /// Re-serialize the fixture with `generated_at` bumped to NOW, so a live-state
+    /// render reads "live · updated now" instead of the fixture's fixed timestamp
+    /// (which would show a misleading "frozen · updated Nd ago" on a hero image). Only
+    /// the live variants use this; the dead/stale variants keep the old stamp on
+    /// purpose. Falls back to the original data if the rewrite fails.
+    private static func fixtureFreshened(from data: Data) -> Data {
+        guard var dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return data
+        }
+        let fmt = ISO8601DateFormatter()
+        fmt.formatOptions = [.withInternetDateTime]
+        dict["generated_at"] = fmt.string(from: Date())
+        return (try? JSONSerialization.data(withJSONObject: dict)) ?? data
+    }
+
     /// Re-serialize the fixture with `clauth_version` swapped, for the skew variant.
     /// Fields are `let`, so this round-trips through a dictionary rather than mutating.
     private static func fixtureWithVersion(_ version: String, from data: Data) -> DaemonStatus? {
@@ -117,10 +132,16 @@ enum Snapshot {
     /// `healthy`/`stale`/`schema2`/`skew`.
     @MainActor
     static func render(variant: String, to path: String) {
-        guard let data = Fixtures.statusJSONData(),
-              let mock = try? JSONDecoder().decode(DaemonStatus.self, from: data)
-        else {
-            FileHandle.standardError.write(Data("snapshot: failed to load/decode fixture\n".utf8))
+        // Dead/stale variants intentionally show an old timestamp; every other variant
+        // is a LIVE state, so freshen `generated_at` to now for an honest "live" stamp.
+        let staleVariants: Set<String> = ["daemon-dead", "dead", "stale", "schema2", "skew"]
+        guard let rawData = Fixtures.statusJSONData() else {
+            FileHandle.standardError.write(Data("snapshot: failed to load fixture\n".utf8))
+            return
+        }
+        let data = staleVariants.contains(variant) ? rawData : fixtureFreshened(from: rawData)
+        guard let mock = try? JSONDecoder().decode(DaemonStatus.self, from: data) else {
+            FileHandle.standardError.write(Data("snapshot: failed to decode fixture\n".utf8))
             return
         }
         let nonActive = mock.profiles.first { !$0.active }?.name ?? mock.profiles.first?.name ?? ""
