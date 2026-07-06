@@ -72,9 +72,10 @@ actions**:
 - **actions** — Refresh usage, Start at login, Quit (the daemon keeps running).
 
 **Two config surfaces, no Settings window:** a native **right-click context menu** on
-every row (switch / refresh / re-authenticate / add–remove / move / "Leave chain at ▸"
-preset submenu / copy name) for fast edits, and the inline **Configure** disclosure as
-the canonical editor (per-account threshold, reorder, add/remove, and the wrap-off
+every row (switch / refresh / re-authenticate / rename / add–remove / move / "Leave
+chain at ▸" preset submenu / copy name) for fast edits, and the inline **Configure**
+disclosure as the canonical editor (per-account threshold, reorder, add/remove, and the
+wrap-off
 setting as a plain-language radio). Removing an armed member asks first. Both drive the
 daemon's control socket (`clauthd.sock`), so a running `clauth daemon` is required to
 edit (display works off `status.json` alone).
@@ -138,6 +139,11 @@ Implemented (the CBAR-4 "Preflight" redesign):
   inline **Configure** disclosure (per-account threshold, reorder, add/remove, and a
   plain-language wrap-off radio; armed-member removal asks first). Both drive the
   daemon's config socket, with an "Applying…" shimmer and loud revert-on-rejection.
+- **Rename a profile** — the context-menu **"Rename…"** opens an inline editor (a
+  TextField with live validation mirroring the daemon's name rule); a valid name drives
+  the `rename` socket command, which renames the profile dir + every reference and
+  re-links the credential mirror if it's the active account (so a live session follows
+  the rename). An invalid/taken name surfaces a loud error and never fires the socket.
 - **Distinct daemon-liveness states** — never-started (empty state) vs frozen (dead
   banner over dimmed last-known data, % withheld) vs schema-too-new (out-of-date).
 - Runs as an accessory app (no Dock icon); packaged as an ad-hoc-signed `.app`.
