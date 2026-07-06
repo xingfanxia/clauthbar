@@ -48,6 +48,11 @@ struct PanelView: View {
         if let name = model.reauthInFlight {
             reauthBanner(name)
         }
+        // The inline rename editor (context-menu "Rename…") floats at the panel top,
+        // same as the removal confirm — a TextField needs a stable focus home.
+        if let name = model.renaming {
+            RenameBanner(model: model, name: name)
+        }
         StatusStrip(model: model)
         Divider().padding(.horizontal, 12)
         accounts(status, dead: dead)
@@ -258,6 +263,55 @@ private struct ChainStrip: View {
         .padding(.vertical, 3).padding(.horizontal, 8)
         .background(armed ? Theme.sapphire.opacity(0.18) : Color.primary.opacity(0.05), in: Capsule())
         .foregroundStyle(armed ? Theme.sapphire : Color.primary)
+    }
+}
+
+// MARK: - Rename banner
+
+/// The inline profile-rename editor: a TextField pre-filled with the current name,
+/// live client-side validation (mirroring the daemon's rule), and Rename/Cancel.
+/// Its own `@State` for the field + `@FocusState` so typing lands here on open.
+private struct RenameBanner: View {
+    @ObservedObject var model: StatusModel
+    let name: String
+    @State private var newName: String = ""
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Rename \(name)").font(.subheadline).fontWeight(.medium)
+            HStack(spacing: 6) {
+                TextField("New name", text: $newName)
+                    .textFieldStyle(.roundedBorder)
+                    .focused($focused)
+                    .onSubmit(commit)
+                Button("Cancel") { model.cancelRename() }.controlSize(.small)
+                Button("Rename", action: commit).controlSize(.small)
+                    .tint(Theme.accent)
+                    .disabled(liveError != nil)
+                    .keyboardShortcut(.return, modifiers: [])
+            }
+            if let err = liveError, !newName.trimmingCharacters(in: .whitespaces).isEmpty {
+                Text(err).font(.caption).foregroundStyle(Theme.danger)
+            }
+        }
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .background(Theme.accent.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
+        .padding(.horizontal, 12).padding(.bottom, 6)
+        .onAppear {
+            newName = name
+            focused = true
+        }
+    }
+
+    /// Live validation echoing the daemon's rule (nil ⇒ valid).
+    private var liveError: String? {
+        StatusModel.renameValidationError(newName, old: name, existing: model.listProfiles.map(\.name))
+    }
+
+    private func commit() {
+        guard liveError == nil else { return }
+        model.commitRename(name, to: newName)
     }
 }
 

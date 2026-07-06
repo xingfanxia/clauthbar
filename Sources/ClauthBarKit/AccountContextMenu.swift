@@ -53,6 +53,11 @@ struct AccountContextMenu: View {
             .disabled(model.reauthInFlight != nil)
         }
 
+        // Rename the profile (socket-only — needs a live daemon). Opens the inline
+        // rename banner; any provider can be renamed.
+        Button("Rename…") { model.beginRename(p.name) }
+            .disabled(!model.daemonReachable)
+
         Divider()
 
         // Chain membership + ordering (socket-only — need a live daemon).

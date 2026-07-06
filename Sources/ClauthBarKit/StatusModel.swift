@@ -40,6 +40,10 @@ final class StatusModel: ObservableObject {
     /// an ARMED member requires an explicit "remove anyway?"). `nil` ⇒ no confirm
     /// pending. Copy comes from `ChainEdit.removalConsequence`.
     @Published var pendingRemoval: String?
+    /// The profile currently being renamed — drives the inline rename banner (a
+    /// TextField + confirm). `nil` ⇒ no rename in progress. Set by the context-menu
+    /// "Rename…" item, cleared on commit/cancel.
+    @Published var renaming: String?
     /// Count of config socket round-trips in flight (CBAR4-5 §7 pending shimmer) —
     /// the disclosure shows an honest "Applying…" while > 0. Cleared as each
     /// command's reply lands (the settle ladder then updates the view).
@@ -585,6 +589,48 @@ final class StatusModel: ObservableObject {
     }
 
     func cancelRemoval() { pendingRemoval = nil }
+
+    // MARK: - Rename a profile (context-menu "Rename…" → inline banner)
+
+    /// Open the inline rename editor for `name`.
+    func beginRename(_ name: String) { renaming = name }
+    func cancelRename() { renaming = nil }
+
+    /// Commit a rename. Validates the new name client-side for instant feedback (the
+    /// daemon re-validates authoritatively); an invalid/taken name surfaces a loud
+    /// error and does NOT fire the socket. On accept, the settle ladder waits for the
+    /// renamed profile to appear in status.json.
+    func commitRename(_ old: String, to new: String) {
+        let existing = listProfiles.map(\.name)
+        if let error = Self.renameValidationError(new, old: old, existing: existing) {
+            renaming = nil
+            showError(error)
+            return
+        }
+        let trimmed = new.trimmingCharacters(in: .whitespaces)
+        renaming = nil
+        run({ DaemonClient.rename(old, to: trimmed) },
+            expecting: { $0.profiles.contains { $0.name == trimmed } })
+    }
+
+    /// Client-side name check mirroring the daemon's `validate_profile_name`: non-empty,
+    /// charset (letters/digits/`-`/`_`/`.`, not leading `.`), and no collision with a
+    /// DIFFERENT existing profile (a case-only self-rename is allowed). Returns nil when
+    /// valid. Pure/`nonisolated` so it's unit-tested without a daemon.
+    nonisolated static func renameValidationError(_ new: String, old: String, existing: [String]) -> String? {
+        let trimmed = new.trimmingCharacters(in: .whitespaces)
+        if trimmed.isEmpty { return "Name can't be empty." }
+        let ok = trimmed.allSatisfy { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" || $0 == "." }
+        if !ok || trimmed.hasPrefix(".") {
+            return "Use only letters, digits, '-', '_', or '.', and don't start with '.'."
+        }
+        if existing.contains(where: { $0.caseInsensitiveCompare(trimmed) == .orderedSame
+            && $0.caseInsensitiveCompare(old) != .orderedSame })
+        {
+            return "A profile named '\(trimmed)' already exists."
+        }
+        return nil
+    }
 
     /// Run a command's blocking socket I/O OFF the main actor (TECH-10 #25 — a
     /// switch parks the socket ~2s while the daemon holds its config lock across a

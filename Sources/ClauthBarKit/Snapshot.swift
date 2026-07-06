@@ -136,6 +136,7 @@ enum Snapshot {
             case "remove-confirm": return (mock, .ok, nil, .idle)
             case "no-fable": return (fixtureWithoutFable(from: data) ?? mock, .ok, nil, .idle)
             case "spent": return (exhausted?.0 ?? mock, .ok, exhausted?.1 ?? nonActive, .idle)
+            case "rename": return (mock, .ok, nonActive, .idle)
             case "reauth": return (broken?.0 ?? mock, .ok, broken?.1 ?? nonActive, .idle)
             // The ACTIVE account is the one broken — inspect it to prove the detail card
             // shows the reauth verb (not the "Active account" readout) for an active drop.
@@ -165,6 +166,7 @@ enum Snapshot {
         if variant == "remove-confirm" {
             model.pendingRemoval = mock.profiles.first { $0.fallback?.armed == true }?.name
         }
+        if variant == "rename" { model.renaming = nonActive }
         let skewNote = model.versionSkew.map { " skew=\($0)" } ?? ""
         let phaseNote = phase == .idle ? "" : " phase=\(phase)"
         let inspectNote = inspected.map { " inspected=\($0)" } ?? ""

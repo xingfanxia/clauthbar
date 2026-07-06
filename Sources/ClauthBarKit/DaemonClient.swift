@@ -164,6 +164,15 @@ enum DaemonClient {
         sendCommand(["cmd": "set_wrap_off", "value": on])
     }
 
+    /// Rename a profile. The daemon validates the new name (charset + collision)
+    /// synchronously and returns `ok:false` with a reason on rejection; on accept it
+    /// renames the profile dir + every reference and re-links the credential mirror if
+    /// the account is active (same tokens → the live session is untouched).
+    @discardableResult
+    static func rename(_ old: String, to new: String) -> CommandOutcome {
+        sendCommand(["cmd": "rename", "profile": old, "new_name": new])
+    }
+
     // MARK: - Socket
 
     /// The transport-level result of one socket round-trip, kept DISTINCT from the
