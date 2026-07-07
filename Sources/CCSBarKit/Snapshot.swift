@@ -147,9 +147,32 @@ enum Snapshot {
         p["auth_status"] = "broken"
         profiles[idx] = p
         dict["profiles"] = profiles
+        // Re-publish the forecast over the now-broken chain. The daemon SKIPS an
+        // auth-broken member when it walks the chain (ForecastEngine mirror of
+        // fallback.rs:348), so a static fixture forecast still pointing at the account
+        // we just broke would render a self-contradicting hero ("would switch to
+        // <the account whose login just dropped>"). Re-derive via the line-pinned
+        // mirror so the demo publishes exactly what a real daemon would — for the
+        // 3-account fixture this correctly rolls account-1 → (skip broken account-2) →
+        // account-3.
+        if let bumped0 = try? JSONSerialization.data(withJSONObject: dict),
+           let status0 = try? JSONDecoder().decode(DaemonStatus.self, from: bumped0) {
+            dict["forecast"] = forecastDict(ForecastEngine.nextTarget(status0, now: Date()))
+        }
         guard let bumped = try? JSONSerialization.data(withJSONObject: dict),
               let status = try? JSONDecoder().decode(DaemonStatus.self, from: bumped) else { return nil }
         return (status, name)
+    }
+
+    /// The published-`forecast` JSON shape (`status.json.forecast`) for a computed
+    /// Outcome. A demo transform that changes chain viability (e.g. breaking a login)
+    /// must re-publish a coherent forecast rather than keep the fixture's static one.
+    private static func forecastDict(_ outcome: ForecastEngine.Outcome) -> [String: Any] {
+        switch outcome {
+        case .switchTo(let name): return ["action": "switch", "to": name]
+        case .off:                return ["action": "off", "to": NSNull()]
+        case .none:               return ["action": "none", "to": NSNull()]
+        }
     }
 
     /// Render a canonical CBAR-4 state (design §2) or a legacy liveness variant, and

@@ -16,8 +16,8 @@ owns no credentials and runs no network of its own.
 
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/media/panel-healthy-dark.png" />
-    <img src="docs/media/panel-healthy-light.png" width="340" alt="ccsbar panel — forecast strip, usage bars, chain rail" />
+    <source media="(prefers-color-scheme: dark)" srcset="docs/media/panel-healthy-dark-3x.png" />
+    <img src="docs/media/panel-healthy-light-3x.png" width="340" alt="ccsbar panel — forecast strip, usage bars, chain rail" />
   </picture>
 </p>
 
