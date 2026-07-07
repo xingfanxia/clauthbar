@@ -18,8 +18,11 @@ final class DaemonStatusTests: XCTestCase {
         let data = try XCTUnwrap(Fixtures.statusJSONData(), "fixture resource must be bundled")
         let status = try JSONDecoder().decode(DaemonStatus.self, from: data)
         XCTAssertEqual(status.schema, 1)
-        XCTAssertEqual(status.activeProfile, "xfx")
-        XCTAssertEqual(status.fallbackChain, ["xfx", "cl-ax"])
+        // Neutral demo profiles for public README media (see Fixtures header): work
+        // (active) + personal (last-resort fallback) + zai (third-party, kept for
+        // decode coverage, filtered out of rendered media).
+        XCTAssertEqual(status.activeProfile, "work")
+        XCTAssertEqual(status.fallbackChain, ["work", "personal"])
         XCTAssertEqual(status.profiles.count, 3)
         // The third-party profile carries the availability flag (not a balance).
         let zai = try XCTUnwrap(status.profiles.first { $0.name == "zai" })
@@ -28,15 +31,15 @@ final class DaemonStatusTests: XCTestCase {
         // The fixture now represents current daemon output (clauth 81c00a2): the
         // published forecast, burn_aware flag, and per-profile last_resort mark.
         XCTAssertEqual(status.forecast?.action, "switch")
-        XCTAssertEqual(status.forecast?.to, "cl-ax")
-        XCTAssertEqual(status.forecast?.outcome, .switchTo("cl-ax"))
+        XCTAssertEqual(status.forecast?.to, "personal")
+        XCTAssertEqual(status.forecast?.outcome, .switchTo("personal"))
         XCTAssertEqual(status.burnAware, false)
-        let xfx = try XCTUnwrap(status.profiles.first { $0.name == "xfx" })
-        XCTAssertEqual(xfx.fallback?.lastResort, false)
-        // cl-ax is the chain's tail marked last resort — the canonical setup, and it
-        // exercises the flag badge + toggle "on" state in the config snapshot.
-        let clax = try XCTUnwrap(status.profiles.first { $0.name == "cl-ax" })
-        XCTAssertEqual(clax.fallback?.lastResort, true)
+        let work = try XCTUnwrap(status.profiles.first { $0.name == "work" })
+        XCTAssertEqual(work.fallback?.lastResort, false)
+        // personal is the chain's tail marked last resort — the canonical setup, and
+        // it exercises the flag badge + toggle "on" state in the config snapshot.
+        let personal = try XCTUnwrap(status.profiles.first { $0.name == "personal" })
+        XCTAssertEqual(personal.fallback?.lastResort, true)
     }
 
     // MARK: Additive forecast fields (clauth 81c00a2) — present AND absent decode.

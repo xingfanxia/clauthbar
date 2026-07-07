@@ -64,7 +64,7 @@ final class StatusModel: ObservableObject {
     /// different `clauth_version` raises a SOFT skew badge (informational — the
     /// schema gate in TECH-4 handles hard read-format incompatibility). Bump this
     /// when ccsbar is validated against a new clauth release.
-    static let expectedClauthVersion = "0.7.1"
+    static let expectedClauthVersion = "0.7.4"
 
     private var timer: Timer?
     private var lastMtime: Date?

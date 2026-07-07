@@ -24,6 +24,35 @@ enum Snapshot {
         return (try? JSONSerialization.data(withJSONObject: dict)) ?? data
     }
 
+    /// Drop the third-party (non-anthropic) profiles so the README media shows only
+    /// the neutral anthropic demo accounts (work + personal). Render-only — the
+    /// bundled fixture keeps the z.ai row for third-party decode coverage. Returns
+    /// nil on a parse failure so the caller falls back to the unfiltered data.
+    private static func demoFiltered(from data: Data) -> Data? {
+        guard var dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let profiles = dict["profiles"] as? [[String: Any]] else { return nil }
+        dict["profiles"] = profiles.filter { ($0["provider"] as? String ?? "anthropic") == "anthropic" }
+        return try? JSONSerialization.data(withJSONObject: dict)
+    }
+
+    /// `PanelView` wrapped in a dark, rounded "popover material" so the headless
+    /// render resembles the live translucent menu-bar panel. Vibrancy blur is
+    /// impossible headless, so a solid dark fill (windowBackgroundColor under the
+    /// dark appearance set in `render`) with the panel's corner radius + a hairline
+    /// border is the honest approximation. No outer padding — the 340pt panel keeps
+    /// the 680px-at-2x media footprint; the rounded corners fall transparent.
+    @MainActor
+    private static func panelSurface(model: StatusModel) -> some View {
+        PanelView(model: model)
+            .background(Color(nsColor: .windowBackgroundColor))
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
+            )
+            .environment(\.colorScheme, .dark)
+    }
+
     /// Re-serialize the fixture with `clauth_version` swapped, for the skew variant.
     /// Fields are `let`, so this round-trips through a dictionary rather than mutating.
     private static func fixtureWithVersion(_ version: String, from data: Data) -> DaemonStatus? {
@@ -131,14 +160,25 @@ enum Snapshot {
     /// `config` opens the expanded Configure disclosure (§7). Legacy:
     /// `healthy`/`stale`/`schema2`/`skew`.
     @MainActor
-    static func render(variant: String, to path: String) {
+    static func render(variant: String, to path: String, scale: CGFloat = 2) {
+        // Render in the DARK system appearance so the PNG resembles the live
+        // translucent menu-bar panel. `.preferredColorScheme(.dark)` alone only flips
+        // SwiftUI-semantic colors; the NSColor-backed ones (windowBackgroundColor and
+        // Theme's dynamic Latte/Mocha hues) resolve against the APP appearance, so we
+        // set that here. Accessing `.shared` also instantiates NSApp if it's nil.
+        NSApplication.shared.appearance = NSAppearance(named: .darkAqua)
+
         // Dead/stale variants intentionally show an old timestamp; every other variant
         // is a LIVE state, so freshen `generated_at` to now for an honest "live" stamp.
         let staleVariants: Set<String> = ["daemon-dead", "dead", "stale", "schema2", "skew"]
-        guard let rawData = Fixtures.statusJSONData() else {
+        guard let loaded = Fixtures.statusJSONData() else {
             FileHandle.standardError.write(Data("snapshot: failed to load fixture\n".utf8))
             return
         }
+        // Hero media shows only the anthropic demo accounts — the third-party z.ai row
+        // is filtered out (no third-party brand in the README shots). The bundled
+        // fixture keeps it for third-party decode coverage (see Fixtures).
+        let rawData = demoFiltered(from: loaded) ?? loaded
         let data = staleVariants.contains(variant) ? rawData : fixtureFreshened(from: rawData)
         guard let mock = try? JSONDecoder().decode(DaemonStatus.self, from: data) else {
             FileHandle.standardError.write(Data("snapshot: failed to decode fixture\n".utf8))
@@ -194,12 +234,8 @@ enum Snapshot {
         FileHandle.standardError.write(
             Data("snapshot[\(variant)]: liveness=\(resolved)\(inspectNote)\(phaseNote)\(skewNote)\n".utf8))
 
-        let view = PanelView(model: model)
-            .background(Color(nsColor: .windowBackgroundColor))
-            .preferredColorScheme(.dark)
-
-        let renderer = ImageRenderer(content: view)
-        renderer.scale = 2
+        let renderer = ImageRenderer(content: panelSurface(model: model))
+        renderer.scale = scale
         guard let image = renderer.nsImage,
               let tiff = image.tiffRepresentation,
               let rep = NSBitmapImageRep(data: tiff),

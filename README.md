@@ -15,11 +15,11 @@ ccsbar is a thin UI over clauth's daemon: it reads `~/.clauth/status.json`
 owns no credentials and runs no network of its own.
 
 <p align="center">
-  <img src="docs/media/panel-healthy.png" width="340" alt="ccsbar panel — forecast strip, usage bars, chain rail" />
+  <img src="docs/media/panel-healthy-3x.png" width="340" alt="ccsbar panel — forecast strip, usage bars, chain rail" />
 </p>
 
-The panel, top to bottom: the **forecast strip** ("Watching xfx — would switch
-to cl-ax at 95%"), the **account list** with live 5h / 7d / Fable bars, the
+The panel, top to bottom: the **forecast strip** ("Watching work — would switch
+to personal at 95%"), the **account list** with live 5h / 7d / Fable bars, the
 **detail card** for the inspected account, and the **chain rail** showing the
 ordered fallback. Three states it has a loud, fixed home for:
 
@@ -83,8 +83,8 @@ actions**:
   a dead-daemon banner (with a one-click **Start daemon**) > the switch lifecycle
   (arm / switching… / switched / failed) > a wrap-off "all off, resumes when a
   window resets" card > a zero-armed "auto-switch is idle" warning > otherwise the
-  **forecast sentence** ("Watching xfx — would switch to cl-ax at 95% · now 62%"),
-  a pure mirror of the daemon's own chain-walk.
+  **forecast sentence** ("Watching work — would switch to personal at 95% · now 62%"),
+  the daemon's own published chain-walk forecast.
 - the **account list** — one row per account in **file order (rows never reorder)**;
   single click **inspects**. Each row leads with a full-width 5h bar carrying a tick
   at that account's own auto-switch threshold, then half-width 7d / Fable bars, plus

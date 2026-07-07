@@ -14,10 +14,16 @@ public func runCCSBar() {
     }
     // `--snapshot=<variant>` renders a liveness variant (healthy|stale|schema2)
     // to a temp PNG and prints the resolved state (TECH-4 verification harness).
+    // An optional `@<scale>` suffix (e.g. `--snapshot=healthy@3`) renders at a
+    // higher scale for crisp hero media; default scale is 2 (340pt → 680px).
     if let arg = args.first(where: { $0.hasPrefix("--snapshot=") }) {
-        let variant = String(arg.dropFirst("--snapshot=".count))
-        let path = NSTemporaryDirectory() + "ccsbar-snapshot-\(variant).png"
-        Snapshot.render(variant: variant, to: path)
+        let raw = String(arg.dropFirst("--snapshot=".count))
+        let parts = raw.split(separator: "@", maxSplits: 1)
+        let variant = String(parts.first ?? "")
+        let scale: CGFloat = parts.count > 1 ? (Double(parts[1]).map { CGFloat($0) } ?? 2) : 2
+        let suffix = scale == 2 ? "" : "@\(Int(scale))x"
+        let path = NSTemporaryDirectory() + "ccsbar-snapshot-\(variant)\(suffix).png"
+        Snapshot.render(variant: variant, to: path, scale: scale)
         return
     }
     // Real app path only (the --snapshot render above is expected to run alongside

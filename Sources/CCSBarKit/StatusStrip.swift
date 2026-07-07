@@ -46,8 +46,10 @@ struct StatusStrip: View {
                     Button {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString("clauth daemon", forType: .string)
-                    } label: { Image(systemName: "doc.on.doc") }
-                        .buttonStyle(.borderless).controlSize(.small).help("Copy command")
+                    } label: { Image(systemName: "doc.on.doc").foregroundStyle(.secondary) }
+                        // `.plain`, not `.borderless`: borderless chrome draws the □
+                        // missing-image box under headless ImageRenderer (--snapshot).
+                        .buttonStyle(.plain).help("Copy command")
                 }
             }
         }
@@ -105,15 +107,19 @@ struct StatusStrip: View {
             if chainEmpty {
                 Text("Auto-switch off — no fallback chain.").font(.callout)
                 Spacer(minLength: 0)
-                Button("Set up") { model.showConfig = true }
-                    .buttonStyle(.borderless).controlSize(.small)
+                Button { model.showConfig = true } label: {
+                    Text("Set up").font(.subheadline).fontWeight(.medium).foregroundStyle(Theme.accent)
+                }
+                .buttonStyle(.plain)
             } else {
                 Text("Auto-switch idle — \(model.active?.name ?? "the active account") isn't armed.")
                     .font(.callout)
                 Spacer(minLength: 0)
                 if let name = model.active?.name {
-                    Button("Add \(name)") { model.fallbackAdd(name) }
-                        .buttonStyle(.borderless).controlSize(.small)
+                    Button { model.fallbackAdd(name) } label: {
+                        Text("Add \(name)").font(.subheadline).fontWeight(.medium).foregroundStyle(Theme.accent)
+                    }
+                    .buttonStyle(.plain)
                 }
             }
         }

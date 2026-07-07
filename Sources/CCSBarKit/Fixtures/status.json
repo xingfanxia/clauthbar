@@ -1,16 +1,16 @@
 {
   "schema": 1,
   "generated_at": "2026-07-04T05:00:00+00:00",
-  "active_profile": "xfx",
+  "active_profile": "work",
   "wrap_off": false,
   "refresh_interval_ms": 90000,
   "fallback_chain": [
-    "xfx",
-    "cl-ax"
+    "work",
+    "personal"
   ],
   "profiles": [
     {
-      "name": "xfx",
+      "name": "work",
       "active": true,
       "provider": "anthropic",
       "base_url": null,
@@ -47,7 +47,7 @@
       "third_party": null
     },
     {
-      "name": "cl-ax",
+      "name": "personal",
       "active": false,
       "provider": "anthropic",
       "base_url": null,
@@ -102,16 +102,16 @@
       }
     }
   ],
-  "clauth_version": "0.7.1",
+  "clauth_version": "0.7.4",
   "burn_aware": false,
   "forecast": {
     "action": "switch",
-    "to": "cl-ax"
+    "to": "personal"
   },
   "pending_switch": null,
   "last_switch": {
-    "from": "cl-ax",
-    "to": "xfx",
+    "from": "personal",
+    "to": "work",
     "at": "2026-07-04T04:58:30+00:00",
     "trigger": "scheduler"
   },

@@ -119,8 +119,14 @@ struct PanelView: View {
             HStack {
                 Text("CHAIN").font(.subheadline).fontWeight(.semibold).foregroundStyle(.secondary)
                 Spacer()
-                Button("Edit") { model.showConfig.toggle() }
-                    .buttonStyle(.borderless).controlSize(.small).disabled(dead)
+                // A `.plain` text button, NOT `.buttonStyle(.borderless)`: the AppKit
+                // borderless chrome fails to rasterize under headless `ImageRenderer`
+                // (draws the missing-image □ in --snapshot media); a styled Text label
+                // renders identically in the live app and the snapshot.
+                Button { model.showConfig.toggle() } label: {
+                    Text("Edit").font(.subheadline).fontWeight(.medium).foregroundStyle(Theme.accent)
+                }
+                .buttonStyle(.plain).disabled(dead)
             }
             if status.fallbackChain.isEmpty {
                 Text("None — add accounts in Configure").font(.footnote).foregroundStyle(.secondary)
