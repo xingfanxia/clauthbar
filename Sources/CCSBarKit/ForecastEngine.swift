@@ -1,20 +1,37 @@
 import Foundation
 
-/// Predicts the daemon's NEXT auto-switch target — the truthfulness core behind
-/// every "would switch to X" string in the UI. A PURE mirror of clauth's
-/// `src/fallback.rs::next_target` (fallback.rs:154-206, chain walk at :127-152);
+/// Predicts the daemon's NEXT auto-switch target — the FALLBACK truthfulness core
+/// behind every "would switch to X" string when the daemon is too old to publish
+/// its own forecast. A daemon at clauth 81c00a2+ writes `status.json.forecast`
+/// (computed by the exact Rust walk); `StatusModel.forecast` prefers that and only
+/// drops to this mirror for older daemons. A PURE mirror of clauth's
+/// `src/fallback.rs::next_target` (fallback.rs:336-393, chain walk at :301-317);
 /// naive position+1 is banned (design §8 Watchtower graft, risk register #2).
 ///
-/// CONTRACT — kept in lockstep with the Rust walk (fixture tests + line pins are
-/// mandatory, not optional):
-///   - `threshold_for(p)` = `fallback_threshold ?? 95` (fallback.rs:24, DEFAULT 95).
+/// CONTRACT — mirrors `fallback.rs::next_target` as of clauth 81c00a2 (fixture
+/// tests + line pins are mandatory, not optional):
+///   - `threshold_for(p)` = `fallback_threshold ?? 95` (fallback.rs:27, DEFAULT 95).
 ///   - `is_exhausted(p)` = 5h window is LIVE (`resets_at` in the future) AND its
-///     utilization ≥ threshold (fallback.rs:33). A lapsed/absent window = headroom.
+///     utilization ≥ threshold (fallback.rs:51). A lapsed/absent window = headroom.
 ///   - Walk from one slot after the active profile, wrapping; skip the active slot,
-///     a member with no matching profile, or an auth-broken member (AUTH-1).
-///   - Pass 1: first member with headroom. Pass 2 (only if the active is NOT itself
-///     a 100% sink): first 100%-threshold sink. Then wrap-off → OFF only when the
-///     active is itself exhausted. Else nothing.
+///     a member with no matching profile, or an auth-broken member (AUTH-1,
+///     fallback.rs:348).
+///   - Pass 1 (fallback.rs:358): first member with headroom.
+///   - Pass 2 (fallback.rs:366-372): the EXCLUSIVE last-resort rule — first member
+///     whose `fallback.last_resort` flag is set, accepted even while exhausted; but
+///     if the ACTIVE profile is itself `last_resort`, return `.none` (no
+///     last-resort ping-pong). The old "threshold == 100 sink" convention is GONE —
+///     do NOT reintroduce it; it is wrong against any current daemon.
+///   - Wrap-off → OFF (fallback.rs:380-391): only when wrap_off is on AND the active
+///     is itself exhausted.
+///
+/// BURN-AWARE GAP (accepted): the Rust wrap-off check is burn-aware — it projects
+/// the active's exhaustion on `current + burn_rate × interval` when
+/// `burn_aware_switching` is on. This mirror uses the STATIC `is_exhausted` because
+/// status.json carries no burn rates. That is fine: any daemon new enough to run
+/// burn-aware switching (and set `burn_aware`) also publishes `forecast`, so this
+/// mirror never runs for it — it only ever answers for pre-forecast daemons, which
+/// are pre-burn-aware too.
 enum ForecastEngine {
     /// What the daemon would do next, given the current snapshot.
     enum Outcome: Equatable, Sendable {
@@ -61,17 +78,22 @@ enum ForecastEngine {
             return nil
         }
 
-        // Pass 1 — headroom (fallback.rs:189).
+        // Pass 1 — headroom (fallback.rs:358).
         if let name = walk({ !exhausted($0) }) { return .switchTo(name) }
 
-        // Two maxed sinks rotating into each other gains nothing (fallback.rs:194).
-        let activeIsSink = profile(active).map { thresholdFor($0) >= 100 } ?? false
-        if activeIsSink { return .none }
+        // Two last-resort members rotating into each other gains nothing: if the
+        // ACTIVE is itself last_resort, park (fallback.rs:366-369).
+        let activeIsLastResort = profile(active)?.fallback?.lastResort ?? false
+        if activeIsLastResort { return .none }
 
-        // Pass 2 — 100% sink (fallback.rs:201).
-        if let name = walk({ thresholdFor($0) >= 100 }) { return .switchTo(name) }
+        // Pass 2 — the exclusive last-resort mark (fallback.rs:370): first member
+        // flagged `last_resort`, accepted even while exhausted. (The old
+        // threshold-100 sink convention is gone — see the CONTRACT.)
+        if let name = walk({ $0.fallback?.lastResort ?? false }) { return .switchTo(name) }
 
-        // Wrap-off → OFF, only when the active is itself exhausted (fallback.rs:207).
+        // Wrap-off → OFF, only when the active is itself exhausted (fallback.rs:380).
+        // STATIC exhaustion here; the Rust twin is burn-aware — see the BURN-AWARE
+        // GAP note on the enum (never runs for a forecast-publishing daemon).
         if status.wrapOff, let ap = profile(active), exhausted(ap) { return .off }
         return .none
     }

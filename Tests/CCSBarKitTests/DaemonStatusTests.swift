@@ -25,6 +25,62 @@ final class DaemonStatusTests: XCTestCase {
         let zai = try XCTUnwrap(status.profiles.first { $0.name == "zai" })
         XCTAssertEqual(zai.thirdParty?.available, true)
         XCTAssertEqual(zai.provider, "z.ai")
+        // The fixture now represents current daemon output (clauth 81c00a2): the
+        // published forecast, burn_aware flag, and per-profile last_resort mark.
+        XCTAssertEqual(status.forecast?.action, "switch")
+        XCTAssertEqual(status.forecast?.to, "cl-ax")
+        XCTAssertEqual(status.forecast?.outcome, .switchTo("cl-ax"))
+        XCTAssertEqual(status.burnAware, false)
+        let xfx = try XCTUnwrap(status.profiles.first { $0.name == "xfx" })
+        XCTAssertEqual(xfx.fallback?.lastResort, false)
+    }
+
+    // MARK: Additive forecast fields (clauth 81c00a2) — present AND absent decode.
+
+    func testForecastBurnAwareAndLastResortDecodeWhenPresent() throws {
+        let status = try decode(#"""
+        {"schema":1,"generated_at":"2026-07-04T05:00:00+00:00","active_profile":"a",
+         "wrap_off":false,"refresh_interval_ms":90000,"burn_aware":true,
+         "forecast":{"action":"switch","to":"b"},
+         "fallback_chain":["a","b"],
+         "profiles":[{"name":"a","active":true,
+            "fallback":{"position":1,"threshold":95,"armed":true,"last_resort":true}},
+                     {"name":"b","active":false,
+            "fallback":{"position":2,"threshold":100,"armed":false,"last_resort":false}}]}
+        """#)
+        XCTAssertEqual(status.burnAware, true)
+        XCTAssertEqual(status.forecast?.action, "switch")
+        XCTAssertEqual(status.forecast?.to, "b")
+        XCTAssertEqual(status.forecast?.outcome, .switchTo("b"))
+        XCTAssertEqual(status.profiles.first { $0.name == "a" }?.fallback?.lastResort, true)
+        XCTAssertEqual(status.profiles.first { $0.name == "b" }?.fallback?.lastResort, false)
+    }
+
+    func testAdditiveForecastFieldsAbsentDecodeBackCompat() throws {
+        // An OLDER daemon that predates these fields: forecast/burnAware are nil,
+        // and a fallback object with no `last_resort` decodes as false — the panel
+        // must still read it (never a blank panel over an old daemon).
+        let status = try decode(#"""
+        {"schema":1,"generated_at":"2026-07-04T05:00:00+00:00","active_profile":"a",
+         "wrap_off":false,"refresh_interval_ms":90000,"fallback_chain":["a"],
+         "profiles":[{"name":"a","active":true,
+            "fallback":{"position":1,"threshold":95,"armed":true}}]}
+        """#)
+        XCTAssertNil(status.forecast)
+        XCTAssertNil(status.burnAware)
+        XCTAssertEqual(status.profiles.first?.fallback?.lastResort, false)
+    }
+
+    func testForecastOffAndNoneMapToOutcomes() throws {
+        for (action, expected) in [("off", ForecastEngine.Outcome.off),
+                                   ("none", ForecastEngine.Outcome.none)] {
+            let status = try decode("""
+            {"schema":1,"generated_at":"2026-07-04T05:00:00+00:00","active_profile":"a",
+             "wrap_off":true,"refresh_interval_ms":90000,
+             "forecast":{"action":"\(action)","to":null},"profiles":[{"name":"a","active":true}]}
+            """)
+            XCTAssertEqual(status.forecast?.outcome, expected, "action \(action)")
+        }
     }
 
     // MARK: SchemaProbe — reads schema without a full decode (the gate's basis).

@@ -36,6 +36,17 @@ struct DaemonStatus: Codable, Sendable {
     let lastSwitch: LastSwitch?
     /// The last drain skip/failure reason (TECH-6), or nil.
     let lastError: LastError?
+    /// The daemon's OWN next-move forecast (clauth 81c00a2), computed by the same
+    /// `fallback::next_target` walk the real switch decision runs — the single
+    /// source of truth for every "would switch to X" string. `nil` on older
+    /// daemons whose status.json predates the field (then the local
+    /// `ForecastEngine` mirror answers instead — see `StatusModel.forecast`).
+    let forecast: DaemonForecast?
+    /// Whether the daemon's ACTIVE-side switch decision projects on burn rate
+    /// (issue #8-b upstream) instead of the static threshold. Additive; `nil` on
+    /// older daemons. A daemon new enough to report this also publishes
+    /// `forecast`, so the burn-aware gap in the mirror never actually runs.
+    let burnAware: Bool?
 
     enum CodingKeys: String, CodingKey {
         case schema
@@ -49,6 +60,8 @@ struct DaemonStatus: Codable, Sendable {
         case pendingSwitch = "pending_switch"
         case lastSwitch = "last_switch"
         case lastError = "last_error"
+        case forecast
+        case burnAware = "burn_aware"
     }
 
     /// Decode additively — every field the daemon added after schema 1 is
@@ -66,6 +79,27 @@ struct DaemonStatus: Codable, Sendable {
         pendingSwitch = try c.decodeIfPresent(String.self, forKey: .pendingSwitch)
         lastSwitch = try c.decodeIfPresent(LastSwitch.self, forKey: .lastSwitch)
         lastError = try c.decodeIfPresent(LastError.self, forKey: .lastError)
+        forecast = try c.decodeIfPresent(DaemonForecast.self, forKey: .forecast)
+        burnAware = try c.decodeIfPresent(Bool.self, forKey: .burnAware)
+    }
+}
+
+/// The daemon's published next-move forecast, mirrored from `status.json.forecast`
+/// (clauth 81c00a2). `action` is `"switch"` (with `to`), `"off"` (wrap-off would
+/// halt every account), or `"none"` (nothing viable / no chain).
+struct DaemonForecast: Codable, Sendable, Equatable {
+    let action: String
+    let to: String?
+
+    /// Map the published forecast onto the UI's forecast enum. An unknown action
+    /// — or a `"switch"` with a null `to` — reads as `.none` rather than throwing,
+    /// so a future action variant degrades to "no rotation target".
+    var outcome: ForecastEngine.Outcome {
+        switch action {
+        case "switch": return to.map(ForecastEngine.Outcome.switchTo) ?? .none
+        case "off": return .off
+        default: return .none
+        }
     }
 }
 
@@ -174,6 +208,24 @@ struct FallbackInfo: Codable, Sendable {
     let position: Int
     let threshold: Double
     let armed: Bool
+    /// The exclusive last-resort mark (clauth 81c00a2): the walk's sink pass
+    /// accepts this member even while exhausted. Additive — absent on older
+    /// daemons, decoded as `false`. Drives `ForecastEngine`'s pass 2 in the
+    /// fallback (no-published-forecast) path.
+    let lastResort: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case position, threshold, armed
+        case lastResort = "last_resort"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        position = try c.decode(Int.self, forKey: .position)
+        threshold = try c.decode(Double.self, forKey: .threshold)
+        armed = try c.decode(Bool.self, forKey: .armed)
+        lastResort = try c.decodeIfPresent(Bool.self, forKey: .lastResort) ?? false
+    }
 }
 
 struct UsageWindow: Codable, Sendable, Identifiable {

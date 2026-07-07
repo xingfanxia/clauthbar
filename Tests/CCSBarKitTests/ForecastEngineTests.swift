@@ -22,7 +22,7 @@ final class ForecastEngineTests: XCTestCase {
     /// = a lapsed window (headroom regardless of util).
     private func profile(
         _ name: String, threshold: Double = 95, util: Double? = nil,
-        live: Bool = true, authBroken: Bool = false
+        live: Bool = true, authBroken: Bool = false, lastResort: Bool = false
     ) -> String {
         let resets = iso(live ? base + 3600 : base - 3600)
         let windows = util.map {
@@ -31,7 +31,7 @@ final class ForecastEngineTests: XCTestCase {
         let auth = authBroken ? ",\"auth_status\":\"broken\"" : ""
         return """
         {"name":"\(name)","active":false,\
-        "fallback":{"position":0,"threshold":\(threshold),"armed":true},\
+        "fallback":{"position":0,"threshold":\(threshold),"armed":true,"last_resort":\(lastResort)},\
         "windows":[\(windows)]\(auth)}
         """
     }
@@ -97,13 +97,13 @@ final class ForecastEngineTests: XCTestCase {
     }
 
     func testAuthBrokenSkippedInSinkPassToo() {
-        // The broken exclusion must cover the 100%-sink pass, not just headroom:
-        // both sinks are exhausted (pass 1 empty), the first is auth-broken → the
-        // sink pass must walk past it to the healthy sink.
+        // The broken exclusion must cover the last-resort pass, not just headroom:
+        // both last-resort members are exhausted (pass 1 empty), the first is
+        // auth-broken → the sink pass must walk past it to the healthy last resort.
         let s = status(active: "xfx", chain: ["xfx", "brokensink", "goodsink"], profiles: [
             profile("xfx", threshold: 95, util: 50),
-            profile("brokensink", threshold: 100, util: 100, authBroken: true),
-            profile("goodsink", threshold: 100, util: 100),
+            profile("brokensink", util: 100, authBroken: true, lastResort: true),
+            profile("goodsink", util: 100, lastResort: true),
         ])
         XCTAssertEqual(ForecastEngine.nextTarget(s, now: now), .switchTo("goodsink"))
     }
@@ -117,21 +117,34 @@ final class ForecastEngineTests: XCTestCase {
         XCTAssertEqual(ForecastEngine.nextTarget(s, now: now), .switchTo("zai"))
     }
 
-    // MARK: Pass 2 — 100% sink (last resort).
+    // MARK: Pass 2 — the exclusive last-resort mark.
 
-    func testSinkIsLastResortWhenNoHeadroom() {
+    func testLastResortPickedWhenNoHeadroomAndActiveIsNotLastResort() {
+        // A member flagged last_resort is accepted in pass 2 even while exhausted,
+        // but ONLY because the active profile is not itself last_resort.
         let s = status(active: "xfx", chain: ["xfx", "sink"], profiles: [
             profile("xfx", threshold: 95, util: 50),
-            profile("sink", threshold: 100, util: 100), // exhausted in pass 1, sink in pass 2
+            profile("sink", util: 100, lastResort: true), // exhausted in pass 1, last resort in pass 2
         ])
         XCTAssertEqual(ForecastEngine.nextTarget(s, now: now), .switchTo("sink"))
     }
 
-    func testActiveSinkDoesNotRotateIntoAnotherSink() {
-        // Active is itself a 100% sink → no point migrating sink→sink.
+    func testActiveLastResortDoesNotRotateIntoAnotherLastResort() {
+        // Active is itself last_resort → the exclusive rule parks it (no ping-pong),
+        // even though `sink` is also a last_resort member.
         let s = status(active: "xfx", chain: ["xfx", "sink"], profiles: [
-            profile("xfx", threshold: 100, util: 100),
-            profile("sink", threshold: 100, util: 100),
+            profile("xfx", util: 100, lastResort: true),
+            profile("sink", util: 100, lastResort: true),
+        ])
+        XCTAssertEqual(ForecastEngine.nextTarget(s, now: now), .none)
+    }
+
+    func testHighThresholdMemberIsNoLongerASinkWithoutLastResort() {
+        // The retired threshold-100 convention: a 100%-threshold member with NO
+        // last_resort flag must NOT be picked in pass 2 (it isn't a sink anymore).
+        let s = status(active: "xfx", wrapOff: false, chain: ["xfx", "maxed"], profiles: [
+            profile("xfx", threshold: 95, util: 99),   // active exhausted, no headroom
+            profile("maxed", threshold: 100, util: 100), // exhausted, but last_resort=false
         ])
         XCTAssertEqual(ForecastEngine.nextTarget(s, now: now), .none)
     }

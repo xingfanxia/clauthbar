@@ -233,10 +233,17 @@ final class StatusModel: ObservableObject {
 
     // MARK: - Forecast (drives the status strip + detail chain line)
 
-    /// The daemon's predicted next auto-switch target (pure `ForecastEngine` mirror
-    /// of fallback.rs). `now` is read here; the view refreshes on the poll/1s clock.
+    /// The daemon's predicted next auto-switch target — the single choke point every
+    /// "would switch to X" string resolves through. Prefers the daemon's OWN
+    /// published forecast (clauth 81c00a2+): it is computed by the exact
+    /// `fallback::next_target` walk the switch decision runs, so it cannot drift the
+    /// way a client-side mirror silently did when upstream changed the walk
+    /// semantics. Falls back to the local `ForecastEngine` mirror only for older
+    /// daemons whose status.json lacks the `forecast` field. `now` is read here for
+    /// the mirror's clock; the view refreshes on the poll/1s cadence.
     var forecast: ForecastEngine.Outcome {
         guard let s = status else { return .none }
+        if let published = s.forecast { return published.outcome }
         return ForecastEngine.nextTarget(s, now: Date())
     }
 

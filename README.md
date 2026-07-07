@@ -162,8 +162,10 @@ Implemented (the CBAR-4 "Preflight" redesign):
   verb instead of a dead-end hint; it spawns `clauth login <name>` (works daemon-up or
   -down), guarded so only one sign-in runs at a time, with a global in-flight banner. The
   context menu offers proactive **Re-authenticate (browser)** for any OAuth account.
-- **Truthfulness engines** (pure, unit-tested): a **forecast** mirror of the daemon's
-  `fallback.rs` chain-walk (line-pinned, fixture-tested — never a naive position+1),
+- **Truthfulness engines** (pure, unit-tested): a **forecast** that renders the
+  daemon's OWN published next-move (`status.json.forecast`, clauth 81c00a2+) as the
+  source of truth, with the line-pinned `fallback.rs` chain-walk **mirror** kept only
+  as a fallback for older daemons (fixture-tested — never a naive position+1),
   a graded **liveness ladder** (live < 5s / syncing < 15s / dead) on the 1s write
   cadence, a **switch state machine** (arm / pending / confirmed / failed), and the
   **menu-bar label ladder** — plus a **rotation heartbeat** that flashes "rotated to
@@ -199,7 +201,7 @@ Deferred:
 | `Exhaustion.swift` | pure `ProfileStatus.spentTag` — the one definition of "a window is at its cap" |
 | `DaemonClient.swift` | read `status.json`; switch/refresh/config over the socket (shell fallback); `reauth` spawns `clauth login <name>` |
 | `Theme.swift` | color roles (one meaning per hue) + `UsageBar` (threshold tick) + `usageColor`/`resetHint` |
-| `ForecastEngine.swift` | pure mirror of `fallback.rs::next_target` — the "would switch to X" prediction |
+| `ForecastEngine.swift` | pure `fallback.rs::next_target` mirror — FALLBACK "would switch to X" prediction for daemons too old to publish `status.json.forecast` |
 | `LivenessLadder.swift` | graded freshness (live / syncing / dead) on the 1s write cadence |
 | `SwitchMachine.swift` | pure switch-lifecycle reducer (arm / pending / confirmed / failed) |
 | `MenuBarLabelLadder.swift` | pure menu-bar label spec — all state in SF Symbol shape |

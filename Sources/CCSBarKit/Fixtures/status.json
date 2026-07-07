@@ -24,7 +24,8 @@
       "fallback": {
         "position": 1,
         "threshold": 95,
-        "armed": true
+        "armed": true,
+        "last_resort": false
       },
       "windows": [
         {
@@ -60,7 +61,8 @@
       "fallback": {
         "position": 2,
         "threshold": 95,
-        "armed": false
+        "armed": false,
+        "last_resort": false
       },
       "windows": [
         {
@@ -101,6 +103,11 @@
     }
   ],
   "clauth_version": "0.7.1",
+  "burn_aware": false,
+  "forecast": {
+    "action": "switch",
+    "to": "cl-ax"
+  },
   "pending_switch": null,
   "last_switch": {
     "from": "cl-ax",
