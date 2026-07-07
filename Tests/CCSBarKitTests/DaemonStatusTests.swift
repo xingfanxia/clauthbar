@@ -33,6 +33,10 @@ final class DaemonStatusTests: XCTestCase {
         XCTAssertEqual(status.burnAware, false)
         let xfx = try XCTUnwrap(status.profiles.first { $0.name == "xfx" })
         XCTAssertEqual(xfx.fallback?.lastResort, false)
+        // cl-ax is the chain's tail marked last resort — the canonical setup, and it
+        // exercises the flag badge + toggle "on" state in the config snapshot.
+        let clax = try XCTUnwrap(status.profiles.first { $0.name == "cl-ax" })
+        XCTAssertEqual(clax.fallback?.lastResort, true)
     }
 
     // MARK: Additive forecast fields (clauth 81c00a2) — present AND absent decode.

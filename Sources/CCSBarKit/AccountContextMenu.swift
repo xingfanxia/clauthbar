@@ -90,6 +90,19 @@ struct AccountContextMenu: View {
             }
             .disabled(!reachable)
 
+            // Toggle the exclusive last-resort flag (clauth set_last_resort) — a
+            // checkmark shows the current state. Independent of the threshold above.
+            Button {
+                model.setLastResort(p.name, !fb.lastResort)
+            } label: {
+                if fb.lastResort {
+                    Label(ChainEdit.lastResortLabel, systemImage: "checkmark")
+                } else {
+                    Text(ChainEdit.lastResortLabel)
+                }
+            }
+            .disabled(!reachable)
+
             Button("Move up") { model.fallbackMove(p.name, up: true) }
                 .disabled(!reachable || fb.position <= 1)
             Button("Move down") { model.fallbackMove(p.name, up: false) }

@@ -111,6 +111,25 @@ final class CommandOutcomeTests: XCTestCase {
         XCTAssertEqual(out, .unreachable)
     }
 
+    // MARK: set_last_resort — the payload shape the daemon validates via as_bool.
+
+    func testSetLastResortPayloadShape() {
+        var captured: [String: Any]?
+        let out = DaemonClient.setLastResort("work", true, send: { cmd in
+            captured = cmd
+            return .ok
+        })
+        XCTAssertEqual(out, .ok)
+        XCTAssertEqual(captured?["cmd"] as? String, "set_last_resort")
+        XCTAssertEqual(captured?["profile"] as? String, "work")
+        // Must be a REAL JSON bool — the daemon rejects a non-bool (`as_bool` → None).
+        XCTAssertEqual(captured?["value"] as? Bool, true)
+
+        var offPayload: [String: Any]?
+        _ = DaemonClient.setLastResort("work", false, send: { offPayload = $0; return .ok })
+        XCTAssertEqual(offPayload?["value"] as? Bool, false)
+    }
+
     // MARK: last_switch / last_error decode (the observability fields).
 
     func testLastSwitchAndLastErrorDecode() throws {

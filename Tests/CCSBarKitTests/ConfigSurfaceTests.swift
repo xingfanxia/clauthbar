@@ -22,15 +22,18 @@ final class ConfigSurfaceTests: XCTestCase {
     func testThresholdLabels() {
         XCTAssertEqual(ChainEdit.thresholdLabel(50), "50%")
         XCTAssertEqual(ChainEdit.thresholdLabel(95), "95%")
-        // 100 reads as the sink, never "switch at 100%".
-        XCTAssertEqual(ChainEdit.thresholdLabel(100), "Last resort (100%)")
+        // "Last resort" is now the independent `last_resort` flag, not a threshold
+        // value — 100 is a plain "leave at 100%" threshold.
+        XCTAssertEqual(ChainEdit.thresholdLabel(100), "100%")
+        XCTAssertEqual(ChainEdit.currentThresholdLabel(100), "100%")
+        XCTAssertEqual(ChainEdit.currentThresholdLabel(80), "80%")
     }
 
     func testNoWrapOffJargonInVocabulary() {
         // §7: the "wrap-off" jargon is retired from all user-facing copy.
         let copy = [
-            ChainEdit.thresholdLegend, ChainEdit.sinkLegend, ChainEdit.addHint,
-            ChainEdit.stayOnLastLabel, ChainEdit.switchEverythingOffLabel,
+            ChainEdit.thresholdLegend, ChainEdit.lastResortLegend, ChainEdit.lastResortLabel,
+            ChainEdit.addHint, ChainEdit.stayOnLastLabel, ChainEdit.switchEverythingOffLabel,
             ChainEdit.switchEverythingOffDetail,
         ].joined(separator: " ").lowercased()
         XCTAssertFalse(copy.contains("wrap-off"))

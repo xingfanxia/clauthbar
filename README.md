@@ -89,7 +89,7 @@ actions**:
   single click **inspects**. Each row leads with a full-width 5h bar carrying a tick
   at that account's own auto-switch threshold, then half-width 7d / Fable bars, plus
   badges (a sapphire "⚡ watching" chip when armed, a danger "spent"/"week spent"/"5h
-  spent" pill with a muted name when a window is at its cap, last-resort sink flag,
+  spent" pill with a muted name when a window is at its cap, a last-resort flag,
   in-use, login-expired). Third-party api-key accounts show an availability dot instead
   of %-bars.
 - the **detail card** for the inspected account — its three windows with reset times,
@@ -106,8 +106,8 @@ actions**:
 
 **Two config surfaces, no Settings window:** a native **right-click context menu** on
 every row (switch / refresh / re-authenticate / rename / add–remove / move / "Leave
-chain at ▸" preset submenu / copy name) for fast edits, and the inline **Configure**
-disclosure as the canonical editor (per-account threshold, reorder, add/remove, and the
+chain at ▸" preset submenu / last-resort toggle / copy name) for fast edits, and the inline **Configure**
+disclosure as the canonical editor (per-account threshold, last-resort flag, reorder, add/remove, and the
 wrap-off
 setting as a plain-language radio). Removing an armed member asks first. Both drive the
 daemon's control socket (`clauthd.sock`), so a running `clauth daemon` is required to
@@ -151,7 +151,7 @@ Implemented (the CBAR-4 "Preflight" redesign):
 - **Inspect-first account list** — file-order rows (never reorder); single click
   inspects (zero daemon traffic). 5h-dominant row anatomy: full-width 5h bar with an
   in-track threshold tick, half-width 7d / Fable bars, and badges ("⚡ watching" when
-  armed / "spent" pill + muted name when a window is capped / sink / in-use /
+  armed / "spent" pill + muted name when a window is capped / last-resort flag / in-use /
   login-expired). Third-party accounts show an availability dot.
 - **Detail card + one switch verb** — the inspected account's three windows, a
   forecast-driven chain line, and a deliberate Switch with the **live-session
@@ -171,7 +171,8 @@ Implemented (the CBAR-4 "Preflight" redesign):
   **menu-bar label ladder** — plus a **rotation heartbeat** that flashes "rotated to
   X" when auto-switch fires unattended.
 - **Two config surfaces** — a native right-click context menu on every row, and the
-  inline **Configure** disclosure (per-account threshold, reorder, add/remove, and a
+  inline **Configure** disclosure (per-account threshold, an independent last-resort
+  flag, reorder, add/remove, and a
   plain-language wrap-off radio; armed-member removal asks first). Both drive the
   daemon's config socket, with an "Applying…" shimmer and loud revert-on-rejection.
 - **Rename a profile** — the context-menu **"Rename…"** opens an inline editor (a
@@ -212,7 +213,7 @@ Deferred:
 | `AccountRow.swift` | one file-order account row + its right-click context menu |
 | `AccountContextMenu.swift` | the row context menu (fast-path chain edits) |
 | `DetailCard.swift` | the inspected account's windows, chain line, and the one switch surface (or the `auth_broken` reauth surface) |
-| `ConfigView.swift` | inline `Configure` disclosure (threshold / reorder / add-remove / wrap-off radio) |
+| `ConfigView.swift` | inline `Configure` disclosure (threshold / last-resort flag / reorder / add-remove / wrap-off radio) |
 | `AppMain.swift` | `@main` — `MenuBarExtra(.window)` app + `--snapshot` render mode |
 | `Snapshot.swift` | headless `ImageRenderer` panel→PNG harness (design-review aid) |
 

@@ -98,9 +98,9 @@ struct AccountRow: View {
                     .font(.system(size: 10)).fontWeight(.medium).foregroundStyle(Theme.sapphire).fixedSize()
                     .help("Auto-switch is watching this account — it rotates away at the threshold")
             }
-            if (p.fallback?.threshold ?? 0) >= 100 {
+            if p.fallback?.lastResort == true {
                 Image(systemName: "flag.fill").font(.system(size: 10)).foregroundStyle(.secondary)
-                    .help("Last-resort sink — the chain parks here even at 100%")
+                    .help(ChainEdit.lastResortLegend)
             }
             if p.hasLiveSession {
                 Text("in use").font(.system(size: 10)).foregroundStyle(.secondary)

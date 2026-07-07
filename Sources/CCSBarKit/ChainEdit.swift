@@ -9,9 +9,10 @@ import Foundation
 /// (§7): the setting is rendered as outcome language ("stay on last account" /
 /// "switch everything off"), never the internal flag name.
 enum ChainEdit {
-    /// The auto-switch threshold presets offered in both surfaces (§7). 100 is the
-    /// "last resort" sink — the chain parks on a 100%-threshold member rather than
-    /// rotating off it.
+    /// The auto-switch threshold presets offered in both surfaces (§7) — the 5h
+    /// utilization at which auto-switch LEAVES the account. Independent of the
+    /// last-resort flag (a member can leave at 80% and still be the chain's last
+    /// resort); see `lastResortLabel`.
     static let thresholdPresets = [50, 80, 90, 95, 100]
 
     /// Chain members first — ordered by their index in `chain` (the `fallbackChain`
@@ -29,16 +30,16 @@ enum ChainEdit {
         return members + nonMembers
     }
 
-    /// The menu label for a preset. 100 reads as "Last resort" (a sink, not a
-    /// rotate-at-100% threshold) so the menu never implies the chain leaves it.
+    /// The menu label for a threshold preset — a plain percentage. "Last resort" is
+    /// no longer a threshold value; it is the independent `last_resort` flag (see
+    /// `lastResortLabel`), so 100 reads as a normal "leave at 100%" threshold.
     static func thresholdLabel(_ value: Int) -> String {
-        value >= 100 ? "Last resort (100%)" : "\(value)%"
+        "\(value)%"
     }
 
-    /// The compact label for a member's CURRENT threshold (the disclosure's value
-    /// chip) — same sink-aware wording as `thresholdLabel`, shortened for the chip.
+    /// The compact label for a member's CURRENT threshold (the disclosure's value chip).
     static func currentThresholdLabel(_ threshold: Double) -> String {
-        threshold >= 100 ? "Last resort" : "\(Int(threshold))%"
+        "\(Int(threshold))%"
     }
 
     /// The chain rail's one-line "when spent" summary — same outcome language as the
@@ -51,8 +52,15 @@ enum ChainEdit {
     /// MEANS so "95%" isn't read as "switch TO this at 95%".
     static let thresholdLegend = "Auto-switch LEAVES this account at this 5h usage."
 
-    /// The legend's sink clarification (shown when the sink is 100%).
-    static let sinkLegend = "100% = last resort — the chain parks here."
+    /// The per-member last-resort toggle label (§7). `last_resort` is an explicit,
+    /// threshold-independent flag (clauth `set_last_resort`): the walk parks on this
+    /// member once nothing else has headroom, even while it's over its own limit.
+    static let lastResortLabel = "Last resort"
+
+    /// The one-line legend for the last-resort flag — kept consistent with
+    /// ForecastEngine's CONTRACT (the walk's exclusive last-resort pass). Reused as
+    /// the tooltip on the config toggle and the row's flag badge (one source of truth).
+    static let lastResortLegend = "Last resort: the chain parks here when nothing else has headroom — even while this account is over its own limit."
 
     /// "+ Add" clarifies it adds an EXISTING profile; account creation is a separate
     /// `clauth login` (§7 — the disclosure must not imply it creates accounts).

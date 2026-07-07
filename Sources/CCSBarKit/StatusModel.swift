@@ -345,13 +345,15 @@ final class StatusModel: ObservableObject {
 
     /// The detail-card chain-membership line for an inspected account (design §2):
     /// "⚡ 1st in chain · watched now — would rotate to cl-ax at 95%…" / "⚑ 2nd in
-    /// chain · last resort — parks here even at 100%". nil for a non-chain account.
+    /// chain · last resort — parks here when nothing else has headroom". nil for a
+    /// non-chain account. Keyed on the explicit `last_resort` flag (clauth
+    /// set_last_resort), NOT threshold-100 — the two are independent now.
     func chainLine(for p: ProfileStatus) -> String? {
         guard let s = status, let idx = s.fallbackChain.firstIndex(of: p.name) else { return nil }
         let ordinal = Self.ordinal(idx + 1)
         let threshold = p.fallback?.threshold ?? 95
-        if threshold >= 100 {
-            return "\(ordinal) in chain · last resort — chain parks here even at 100%"
+        if p.fallback?.lastResort == true {
+            return "\(ordinal) in chain · last resort — parks here when nothing else has headroom"
         }
         if p.active, case .switchTo(let target) = forecast {
             return "\(ordinal) in chain · watched now — would rotate to \(target) at \(Int(threshold))% of the 5h window"
@@ -515,6 +517,14 @@ final class StatusModel: ObservableObject {
     func setThreshold(_ name: String, _ value: Int) {
         run({ DaemonClient.setThreshold(name, value) },
             expecting: { $0.profiles.first { $0.name == name }?.fallback?.threshold == Double(value) })
+    }
+    /// Toggle a chain member's exclusive last-resort flag (clauth `set_last_resort`).
+    /// Threshold-independent — a member can leave at 80% and still be the last resort.
+    /// Against an OLD daemon that lacks the socket command the reply is `ok:false`
+    /// ("unknown cmd"), which surfaces as a loud error banner like any rejected edit.
+    func setLastResort(_ name: String, _ on: Bool) {
+        run({ DaemonClient.setLastResort(name, on) },
+            expecting: { $0.profiles.first { $0.name == name }?.fallback?.lastResort == on })
     }
     func setWrapOff(_ on: Bool) {
         run({ DaemonClient.setWrapOff(on) }, expecting: { $0.wrapOff == on })

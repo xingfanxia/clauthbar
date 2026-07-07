@@ -42,7 +42,7 @@ final class PanelLogicTests: XCTestCase {
          "wrap_off":false,"refresh_interval_ms":90000,"fallback_chain":["xfx","cl-ax"],
          "profiles":[
            {"name":"xfx","active":true,"fallback":{"position":0,"threshold":95,"armed":true},\(live5h.replacingOccurrences(of: "%%", with: "62"))},
-           {"name":"cl-ax","active":false,"fallback":{"position":1,"threshold":100,"armed":false},\(live5h.replacingOccurrences(of: "%%", with: "10"))}
+           {"name":"cl-ax","active":false,"fallback":{"position":1,"threshold":95,"armed":false,"last_resort":true},\(live5h.replacingOccurrences(of: "%%", with: "10"))}
          ]}
         """)
         let model = StatusModel(preview: s)
@@ -51,8 +51,10 @@ final class PanelLogicTests: XCTestCase {
         let xfx = s.profiles[0], clax = s.profiles[1]
         XCTAssertEqual(model.chainLine(for: xfx),
                        "1st in chain · watched now — would rotate to cl-ax at 95% of the 5h window")
+        // cl-ax has threshold 95 (not 100) yet is the last resort — proving the flag
+        // is independent of the threshold, and the copy no longer mentions "100%".
         XCTAssertEqual(model.chainLine(for: clax),
-                       "2nd in chain · last resort — chain parks here even at 100%")
+                       "2nd in chain · last resort — parks here when nothing else has headroom")
     }
 
     // MARK: autoSwitchIdle — empty chain OR zero armed.

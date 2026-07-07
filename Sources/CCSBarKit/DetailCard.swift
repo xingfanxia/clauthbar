@@ -81,10 +81,14 @@ struct DetailCard: View {
     }
 
     private func chainLine(_ text: String) -> some View {
-        HStack(alignment: .top, spacing: 5) {
-            Image(systemName: (p.fallback?.threshold ?? 0) >= 100 ? "flag.fill" : "bolt.fill")
+        // Flag for a last-resort member (matches its "last resort" copy), else the
+        // sapphire bolt of a watched/rotating member — keyed on the explicit
+        // `last_resort` flag, not threshold-100 (the two are independent now).
+        let lastResort = p.fallback?.lastResort == true
+        return HStack(alignment: .top, spacing: 5) {
+            Image(systemName: lastResort ? "flag.fill" : "bolt.fill")
                 .font(.system(size: 10))
-                .foregroundStyle((p.fallback?.threshold ?? 0) >= 100 ? Color.secondary : Theme.sapphire)
+                .foregroundStyle(lastResort ? Color.secondary : Theme.sapphire)
             Text(text).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
     }

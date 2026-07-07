@@ -158,6 +158,25 @@ enum DaemonClient {
         sendCommand(["cmd": "set_threshold", "profile": profile, "value": value])
     }
 
+    /// Set a profile's exclusive last-resort flag (clauth `set_last_resort`, a
+    /// threshold-independent bool). An OLD daemon without the command replies
+    /// `ok:false` ("unknown cmd") → `.daemonError`, surfaced loudly by the caller —
+    /// so the toggle never silently no-ops against a pre-`set_last_resort` daemon.
+    @discardableResult
+    static func setLastResort(_ profile: String, _ value: Bool) -> CommandOutcome {
+        setLastResort(profile, value, send: { sendCommand($0) })
+    }
+
+    /// Testable seam mirroring `switchTo`'s: lets a test assert the command payload
+    /// shape (cmd name, keys, and a real JSON bool — the daemon validates `value`
+    /// with `as_bool`, so an int/string would be rejected) without a live socket.
+    static func setLastResort(
+        _ profile: String, _ value: Bool,
+        send: ([String: Any]) -> CommandOutcome
+    ) -> CommandOutcome {
+        send(["cmd": "set_last_resort", "profile": profile, "value": value])
+    }
+
     /// Toggle wrap-off mode (switch every account off once the chain is spent).
     @discardableResult
     static func setWrapOff(_ on: Bool) -> CommandOutcome {

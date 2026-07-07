@@ -38,7 +38,7 @@ struct ConfigView: View {
                     ForEach(orderedConfigProfiles) { p in
                         row(for: p)
                     }
-                    thresholdLegend
+                    legends
                     Divider().padding(.vertical, 4)
                     wrapOffRadio
                 }
@@ -79,6 +79,7 @@ struct ConfigView: View {
 
                 Spacer()
 
+                lastResortToggle(p, on: fb.lastResort)
                 moveButton(p, up: true, disabled: fb.position <= 1)
                 moveButton(p, up: false, disabled: fb.position >= status.fallbackChain.count)
                 glyphButton("minus.circle", tint: Theme.danger, help: "Remove from chain") {
@@ -120,14 +121,24 @@ struct ConfigView: View {
         .help(ChainEdit.thresholdLegend)
     }
 
-    private var thresholdLegend: some View {
+    private var legends: some View {
         VStack(alignment: .leading, spacing: 1) {
             Text(ChainEdit.thresholdLegend)
-            Text(ChainEdit.sinkLegend)
+            Text(ChainEdit.lastResortLegend)
         }
         .font(.subheadline).foregroundStyle(.secondary)
         .fixedSize(horizontal: false, vertical: true)
         .padding(.top, 2)
+    }
+
+    // A flag toggle for the member's exclusive last-resort flag (§7) — filled + accent
+    // when on, hollow + secondary when off. Threshold-independent (set_last_resort).
+    private func lastResortToggle(_ p: ProfileStatus, on: Bool) -> some View {
+        glyphButton(on ? "flag.fill" : "flag",
+                    tint: on ? Theme.accent : .secondary,
+                    help: ChainEdit.lastResortLegend) {
+            model.setLastResort(p.name, !on)
+        }
     }
 
     private func moveButton(_ p: ProfileStatus, up: Bool, disabled: Bool) -> some View {

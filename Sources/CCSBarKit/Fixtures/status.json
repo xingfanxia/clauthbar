@@ -62,7 +62,7 @@
         "position": 2,
         "threshold": 95,
         "armed": false,
-        "last_resort": false
+        "last_resort": true
       },
       "windows": [
         {
