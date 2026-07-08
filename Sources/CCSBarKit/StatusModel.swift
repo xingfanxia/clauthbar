@@ -592,13 +592,18 @@ final class StatusModel: ObservableObject {
     /// injected so outcome routing is testable without spawning `clauth login`.
     func addAccount(
         _ name: String,
-        run: @escaping @Sendable (String) async -> CommandOutcome = { await DaemonClient.login($0) }
+        run: @escaping @Sendable (String) async -> CommandOutcome = {
+            await DaemonClient.login($0, newOnly: true)
+        }
     ) {
         guard reauthInFlight == nil else { return } // one browser login at a time
         let trimmed = name.trimmingCharacters(in: .whitespaces)
-        // Defense in depth — the banner's Sign-in button is already disabled while the
-        // name is invalid, but a collision MUST never reach the spawn (see the doc on
-        // `AddAccountValidation`: a duplicate would silently reauth someone else).
+        // Fast client-side feedback — the banner already disables Sign-in on an
+        // invalid name; this re-check catches programmatic callers. The AUTHORITATIVE
+        // collision guard is `--new` in the spawn below (`DaemonClient.login`):
+        // this snapshot-based check is a TOCTOU against clauth's real config, so a
+        // duplicate that slips past it gets a loud non-zero exit, never a silent
+        // reauth of someone else's account.
         if let error = AddAccountValidation.error(trimmed, existing: listProfiles.map(\.name)) {
             showError(error)
             return

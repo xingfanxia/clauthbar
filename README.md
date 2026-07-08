@@ -124,7 +124,12 @@ with a dead refresh token, and ccsbar surfaces it — a **login-expired** badge 
 row and, in the detail card, a **"Log in again"** verb that spawns `clauth login <name>`
 (a self-contained browser OAuth sign-in that mints fresh tokens and clears the flag). It
 runs the same whether the daemon is up or down, so a dropped login is recoverable without
-leaving the panel; a top-of-panel banner shows the sign-in is in flight ("finish in your
+leaving the panel. The same launcher powers **"⊕ Add account…"** at the bottom of the
+account list: type a new profile name (validated live against clauth's naming rules) and
+sign a brand-new account in from the menu bar — spawned as `clauth login --new <name>`,
+so an out-of-band name collision is refused by clauth itself rather than silently
+re-authenticating an existing account. A top-of-panel banner shows either sign-in is in
+flight ("finish in your
 browser"). The context menu also offers **Re-authenticate (browser)** for any OAuth
 account proactively, not only a broken one. Third-party api-key accounts have no login to
 renew, so the reauth affordances are hidden for them.
@@ -197,7 +202,7 @@ Deferred:
 - **Packaging (partial)** — `.app` bundling done (`Scripts/package_app.sh`, ad-hoc
   signed). Still deferred: Sparkle auto-update, Developer-ID signing + notarization,
   Homebrew cask.
-- `Add Account…` (→ `clauth login`), chip-click-to-inspect on the chain rail.
+- Chip-click-to-inspect on the chain rail.
 
 ## Architecture
 

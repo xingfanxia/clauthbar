@@ -100,11 +100,13 @@ struct PanelView: View {
                 rows
             }
             // Sign a BRAND-NEW account in, in-app — the gap the reauth-only flow left
-            // (design §7). Subdued below the account rows; disabled while a browser
-            // login is already in flight (single-login guard) or the panel is frozen
-            // (a dead daemon can't reload config to surface the newcomer).
+            // (design §7). Subdued below the account rows; disabled only while a
+            // browser login is already in flight (single-login guard). Deliberately
+            // NOT gated on a dead/frozen panel: the login is a pure CLI flow that
+            // works with the daemon down (same policy as the reauth button), and the
+            // newcomer surfaces on the next tick once the daemon is back.
             AddAccountRow(
-                disabled: dead || model.reauthInFlight != nil,
+                disabled: model.reauthInFlight != nil,
                 action: { model.beginAddAccount() }
             )
             .padding(.horizontal, 8)
@@ -394,7 +396,10 @@ private struct AddAccountBanner: View {
                 Button("Cancel") { model.cancelAddAccount() }.controlSize(.small)
                 Button("Sign in…", action: commit).controlSize(.small)
                     .tint(Theme.accent)
-                    .disabled(liveError != nil)
+                    // Also disabled while ANY browser login runs (the single-login
+                    // guard) — an enabled button whose submit silently no-ops reads
+                    // as broken.
+                    .disabled(liveError != nil || model.reauthInFlight != nil)
                     .keyboardShortcut(.return, modifiers: [])
             }
             // Show the exact rejection reason once the user has typed something; before
@@ -418,7 +423,7 @@ private struct AddAccountBanner: View {
     }
 
     private func commit() {
-        guard liveError == nil else { return }
+        guard liveError == nil, model.reauthInFlight == nil else { return }
         model.addAccount(name)
     }
 }

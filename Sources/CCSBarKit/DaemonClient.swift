@@ -368,11 +368,17 @@ enum DaemonClient {
     /// no socket needed. The caller's in-flight window is bounded by clauth's own
     /// `LOGIN_TIMEOUT_SECS` (180s in `oauth_login.rs`), so no client-side timeout is
     /// needed. Exit 0 → `.ok`; non-zero / timed-out → `.daemonError`; no binary → `.unreachable`.
-    static func login(_ name: String) async -> CommandOutcome {
+    /// `newOnly` passes `--new`, pinning CREATE semantics: clauth refuses (exit ≠ 0)
+    /// if the name already exists, checked against ITS freshly-loaded config at spawn
+    /// time. That is the race-proof collision guard — ccsbar's own pre-check runs on
+    /// the last-polled snapshot, so a profile minted out-of-band inside the poll
+    /// window would otherwise be silently re-authenticated (non-TTY spawns never see
+    /// clauth's confirm prompt).
+    static func login(_ name: String, newOnly: Bool = false) async -> CommandOutcome {
         guard let bin = clauthBinary() else { return .unreachable }
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: bin)
-        proc.arguments = ["login", name]
+        proc.arguments = newOnly ? ["login", "--new", name] : ["login", name]
         return await withCheckedContinuation { (cont: CheckedContinuation<CommandOutcome, Never>) in
             proc.terminationHandler = { p in
                 let status = p.terminationStatus
