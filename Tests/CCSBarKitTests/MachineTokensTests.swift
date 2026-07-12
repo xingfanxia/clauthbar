@@ -22,21 +22,37 @@ final class MachineTokensTests: XCTestCase {
         XCTAssertEqual(t.clauthVersion, "0.9.0")
         XCTAssertEqual(t.toppedUpThrough, "2026-07-01")
 
-        // today: in_out is the headline basis; cost is a known (non-floor) amount.
+        // today: the cache-INCLUSIVE total is the headline display basis (the cost
+        // beside it always prices cache tokens); in_out stays decoded for contract
+        // fidelity. Cost is a known (non-floor) amount.
         XCTAssertEqual(t.periods.today.inOut, 41_200_000)
         XCTAssertEqual(t.periods.today.total, 577_200_000)
+        XCTAssertEqual(t.periods.today.displayTokens, 577_200_000)
         XCTAssertEqual(t.periods.today.costUsd, 12.40)
         XCTAssertFalse(t.periods.today.costIsFloor)
         XCTAssertTrue(t.periods.today.complete)
 
-        // month is the floor case — the strip must render "$268.50+".
+        // month is the floor window (matches the live writer: week/month fold
+        // stats-cache days that published only combined in+out, so their buckets —
+        // and `total` — undercount): BOTH the count and the cost decorate a "+".
+        XCTAssertFalse(t.periods.month.complete)
         XCTAssertTrue(t.periods.month.costIsFloor)
+        XCTAssertEqual(
+            MachineTokens.formatCount(t.periods.month.displayTokens, isFloor: !t.periods.month.complete),
+            "11.7B+")
         XCTAssertEqual(MachineTokens.formatCost(t.periods.month.costUsd, isFloor: t.periods.month.costIsFloor), "$268.50+")
 
-        // lifetime crosses into billions and is still accumulating.
+        // lifetime crosses into tens of billions. Its rows come from the stats-cache
+        // lifetime aggregates, which always carry full splits — so the COUNT is exact
+        // (no "+"), while the COST still floors on an unpriced model. The two floor
+        // flags are independent.
         XCTAssertEqual(t.periods.lifetime.inOut, 3_120_000_000)
-        XCTAssertFalse(t.periods.lifetime.complete)
-        XCTAssertEqual(MachineTokens.abbreviateCount(t.periods.lifetime.inOut), "3.12B")
+        XCTAssertEqual(t.periods.lifetime.displayTokens, 43_140_000_000)
+        XCTAssertTrue(t.periods.lifetime.complete)
+        XCTAssertTrue(t.periods.lifetime.costIsFloor)
+        XCTAssertEqual(
+            MachineTokens.formatCount(t.periods.lifetime.displayTokens, isFloor: !t.periods.lifetime.complete),
+            "43.1B")
 
         // models are DESC by in_out with the tail pre-folded into an "others" row.
         let today = t.periods.today.models
@@ -91,6 +107,63 @@ final class MachineTokensTests: XCTestCase {
         XCTAssertThrowsError(try decode("{ not json"))
     }
 
+    // MARK: Display basis — cache-INCLUSIVE totals. The strip's counts must track the
+    // dollar figure beside them: cost always prices cache tokens, and under 1h-TTL
+    // prompt caching in_out is a fraction of a percent of billed volume ("1.03M ·
+    // $319" read as a broken counter — the 2026-07-12 bug report this section pins).
+
+    func testPeriodDisplayTokensIsCacheInclusiveTotal() throws {
+        let t = try decode(#"""
+        {"schema":1,"generated_at":"2026-07-04T05:00:00+00:00",
+         "periods":{"today":{"input":10,"output":20,"cache_read":900,"cache_create":70,
+                             "in_out":30,"total":1000}}}
+        """#)
+        XCTAssertEqual(t.periods.today.displayTokens, 1000, "total (incl. cache) is the display basis")
+    }
+
+    func testPeriodDisplayTokensFallsBackToInOutWhenTotalAbsent() throws {
+        // An older writer that never published `total` (leniency default 0) must not
+        // blank the strip to "0" — in_out is the best available floor.
+        let t = try decode(#"""
+        {"schema":1,"generated_at":"2026-07-04T05:00:00+00:00",
+         "periods":{"today":{"in_out":5000}}}
+        """#)
+        XCTAssertEqual(t.periods.today.displayTokens, 5000)
+    }
+
+    func testModelDisplayTokensSumsAllFourBuckets() throws {
+        // Models carry no `total` field — the display total is the client-side sum of
+        // the four buckets, falling back to in_out when the split is absent.
+        let t = try decode(#"""
+        {"schema":1,"generated_at":"2026-07-04T05:00:00+00:00",
+         "periods":{"today":{"in_out":30,"total":1000,"models":[
+            {"model":"a","input":10,"output":20,"cache_read":900,"cache_create":70,"in_out":30},
+            {"model":"b","in_out":40}]}}}
+        """#)
+        XCTAssertEqual(t.periods.today.models[0].displayTokens, 1000)
+        XCTAssertEqual(t.periods.today.models[1].displayTokens, 40, "split-less model row falls back to in_out")
+    }
+
+    func testModelDisplayTokensSaturatesInsteadOfTrapping() throws {
+        // A corrupt/hostile file with near-max buckets must saturate, never overflow-
+        // trap the menu bar app (same never-crash discipline as the decode leniency).
+        let big = UInt64.max - 5
+        let t = try decode(#"""
+        {"schema":1,"generated_at":"2026-07-04T05:00:00+00:00",
+         "periods":{"today":{"in_out":1,"total":1,"models":[
+            {"model":"a","input":\#(big),"output":\#(big),"cache_read":\#(big),"cache_create":\#(big),"in_out":1}]}}}
+        """#)
+        XCTAssertEqual(t.periods.today.models[0].displayTokens, UInt64.max)
+    }
+
+    // MARK: Formatters — count with floor decoration (mirrors formatCost's "+").
+
+    func testFormatCountPins() {
+        XCTAssertEqual(MachineTokens.formatCount(577_200_000), "577M")
+        XCTAssertEqual(MachineTokens.formatCount(5_470_000_000, isFloor: true), "5.47B+")
+        XCTAssertEqual(MachineTokens.formatCount(0, isFloor: true), "0", "a zero count never reads \"0+\"")
+    }
+
     // MARK: Schema gate — reads the version alone from a future shape, independent of
     // status.json's supportedSchema.
 
@@ -115,6 +188,17 @@ final class MachineTokensTests: XCTestCase {
         XCTAssertEqual(t.modelsPeriod.models.first?.model, "a")
     }
 
+    func testModelsBasisCountsCacheOnlyUsageAsToday() throws {
+        // A day of pure cache traffic (in_out 0 but total > 0) is still usage —
+        // the basis keys on the same cache-inclusive count the strip displays.
+        let t = try decode(#"""
+        {"schema":1,"generated_at":"2026-07-04T05:00:00+00:00",
+         "periods":{"today":{"in_out":0,"total":500,"models":[{"model":"a","cache_read":500}]},
+                    "lifetime":{"in_out":99,"models":[{"model":"z","in_out":99}]}}}
+        """#)
+        XCTAssertEqual(t.modelsBasis, .today)
+    }
+
     func testModelsBasisFallsBackToLifetimeWhenTodayEmpty() throws {
         let t = try decode(#"""
         {"schema":1,"generated_at":"2026-07-04T05:00:00+00:00",
@@ -126,16 +210,31 @@ final class MachineTokensTests: XCTestCase {
         XCTAssertEqual(t.modelsPeriod.models.first?.display, "Z")
     }
 
-    func testTopModelsIsAPrefix() throws {
+    func testTopModelsRanksByDisplayTokensWithOthersLast() throws {
+        // The daemon orders rows DESC by in_out, but the strip renders cache-
+        // inclusive counts — a cache-heavy model must not read out of order.
+        // Here "b" leads on in_out (40 > 30) but "a" dominates once cache counts
+        // (1000), and the folded "others" row stays pinned last regardless.
+        let t = try decode(#"""
+        {"schema":1,"generated_at":"2026-07-04T05:00:00+00:00",
+         "periods":{"today":{"in_out":70,"total":1040,"models":[
+            {"model":"b","in_out":40},
+            {"model":"a","input":10,"output":20,"cache_read":900,"cache_create":70,"in_out":30},
+            {"model":"others","in_out":3,"cache_read":2000,"split_complete":false}]}}}
+        """#)
+        XCTAssertEqual(t.periods.today.topModels(3).map(\.model), ["a", "b", "others"])
+        // Fewer models than n → the whole list, no crash.
+        XCTAssertEqual(t.periods.today.topModels(10).count, 3)
+    }
+
+    func testTopModelsKeepsDaemonOrderOnEqualCounts() throws {
+        // Equal display counts keep the daemon's in_out-DESC order (stable sort).
         let t = try decode(#"""
         {"schema":1,"generated_at":"2026-07-04T05:00:00+00:00",
          "periods":{"today":{"in_out":60,"models":[
-            {"model":"a","in_out":30},{"model":"b","in_out":20},
-            {"model":"c","in_out":7},{"model":"others","in_out":3}]}}}
+            {"model":"a","in_out":30},{"model":"b","in_out":30},{"model":"c","in_out":7}]}}}
         """#)
         XCTAssertEqual(t.periods.today.topModels(3).map(\.model), ["a", "b", "c"])
-        // Fewer models than n → the whole list, no crash.
-        XCTAssertEqual(t.periods.today.topModels(10).count, 4)
     }
 
     // MARK: Formatters — token abbreviation (3 significant figures, K/M/B).

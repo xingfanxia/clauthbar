@@ -6,7 +6,12 @@ import SwiftUI
 /// secondary/tertiary tones only, never terracotta (ACTIVE) or sapphire (ARMED) —
 /// those hues carry per-account meaning the §5 palette reserves.
 ///
-/// Collapsed to ONE line ("today 41.2M · $12.40"); hovering anywhere over the strip
+/// Every count is the CACHE-INCLUSIVE `displayTokens` (with a `+` floor marker when
+/// a window's buckets undercount), so the token figure tracks the dollar figure
+/// beside it — cost always prices cache tokens, and the cache-excluded `in_out`
+/// basis this strip originally headlined read as a broken counter ("1.03M · $319").
+///
+/// Collapsed to ONE line ("today 577M · $12.40"); hovering anywhere over the strip
 /// expands an inline detail block (a 4-row period table + the top models) in place,
 /// the same expand-in-place idiom the banners/disclosures use — no popover. The hover
 /// target is the whole strip+detail container, so sliding the pointer down into the
@@ -44,7 +49,7 @@ struct TokensStrip: View {
         return HStack(spacing: 6) {
             Image(systemName: "chart.bar.xaxis").font(.caption).foregroundStyle(.secondary)
             Text("Tokens").font(.caption).fontWeight(.medium).foregroundStyle(.secondary)
-            Text("today \(MachineTokens.abbreviateCount(today.inOut)) · \(MachineTokens.formatCost(today.costUsd, isFloor: today.costIsFloor))")
+            Text("today \(MachineTokens.formatCount(today.displayTokens, isFloor: !today.complete)) · \(MachineTokens.formatCost(today.costUsd, isFloor: today.costIsFloor))")
                 .font(.caption).monospacedDigit().foregroundStyle(.secondary)
             Spacer(minLength: 0)
             Image(systemName: expanded ? "chevron.up" : "chevron.down")
@@ -79,7 +84,7 @@ struct TokensStrip: View {
         HStack(spacing: 8) {
             Text(label).font(.caption2).fontWeight(.semibold).foregroundStyle(.secondary)
                 .frame(width: 62, alignment: .leading)
-            Text(MachineTokens.abbreviateCount(p.inOut))
+            Text(MachineTokens.formatCount(p.displayTokens, isFloor: !p.complete))
                 .font(.caption).monospacedDigit()
                 .frame(maxWidth: .infinity, alignment: .trailing)
             Text(MachineTokens.formatCost(p.costUsd, isFloor: p.costIsFloor))
@@ -93,7 +98,7 @@ struct TokensStrip: View {
             Text(m.display).font(.caption2).foregroundStyle(.secondary)
                 .lineLimit(1).truncationMode(.tail)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            Text(MachineTokens.abbreviateCount(m.inOut))
+            Text(MachineTokens.formatCount(m.displayTokens, isFloor: !m.splitComplete))
                 .font(.caption2).monospacedDigit().foregroundStyle(.tertiary)
             Text(MachineTokens.formatCost(m.costUsd))
                 .font(.caption2).monospacedDigit().foregroundStyle(.tertiary)

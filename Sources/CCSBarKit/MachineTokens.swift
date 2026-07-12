@@ -10,9 +10,12 @@ let supportedTokensSchema = 1
 /// Mirror of `~/.clauth/tokens.json` (schema 1), written by `clauth daemon`.
 ///
 /// MACHINE-WIDE token usage — Claude Code's LOCAL history across ALL accounts on
-/// this machine, NOT a per-profile figure. `in_out` is the headline display basis
-/// (input + output, cache excluded); `total` includes cache. See clauth's tokens
-/// snapshot writer for the authoritative shape. Decoded with the same additive
+/// this machine, NOT a per-profile figure. The CACHE-INCLUSIVE `total` is the
+/// display basis (see `displayTokens`): the cost beside every count always prices
+/// cache tokens, and under 1h-TTL prompt caching `in_out` (input + output only) is
+/// a fraction of a percent of billed volume — headlining it made the strip read
+/// "1.03M · $319". See clauth's tokens snapshot writer for the authoritative
+/// shape. Decoded with the same additive
 /// discipline as `DaemonStatus`: fields the daemon adds later are `decodeIfPresent`
 /// with benign defaults so an older/newer writer never blanks the strip.
 struct MachineTokens: Codable, Sendable {
@@ -50,7 +53,7 @@ struct MachineTokens: Codable, Sendable {
     /// meaningful breakdown instead of an empty block.
     enum ModelsBasis: String { case today = "TODAY", lifetime = "LIFETIME" }
 
-    var modelsBasis: ModelsBasis { periods.today.inOut > 0 ? .today : .lifetime }
+    var modelsBasis: ModelsBasis { periods.today.displayTokens > 0 ? .today : .lifetime }
     var modelsPeriod: TokenPeriod { modelsBasis == .today ? periods.today : periods.lifetime }
 }
 
@@ -124,15 +127,43 @@ struct TokenPeriod: Codable, Sendable {
         models = try c.decodeIfPresent([TokenModel].self, forKey: .models) ?? []
     }
 
-    /// The first `n` models. The daemon already sorts DESC by `in_out` and folds the
-    /// long tail into one `"others"` row, so a plain prefix is the top-N.
-    func topModels(_ n: Int) -> [TokenModel] { Array(models.prefix(n)) }
+    /// The count the strip renders — CACHE-INCLUSIVE, so the token figure moves with
+    /// the dollar figure beside it (cost always prices cache tokens). `total` is the
+    /// daemon's four-bucket sum; an older writer that omitted it falls back to
+    /// `in_out` (a floor, but never a blanked-out 0 — note that legacy path renders
+    /// cache-excluded with no "+", since `complete` defaults true; acceptable decay
+    /// for pre-`total` snapshots only). When `complete` is false the buckets
+    /// undercount, so render this with `formatCount(_:isFloor: !complete)`.
+    var displayTokens: UInt64 { max(total, inOut) }
+
+    /// The first `n` models for display. The daemon sorts DESC by `in_out` and folds
+    /// the long tail into one `"others"` row — but the strip renders cache-INCLUSIVE
+    /// counts, and a cache-heavy model can out-total a row the daemon put above it.
+    /// Re-rank by `displayTokens` so the visible numbers read monotonic, keep the
+    /// folded `"others"` sentinel pinned last, and break ties by the daemon's order
+    /// (`enumerated` keeps the sort deterministic; `sorted` alone isn't stable).
+    func topModels(_ n: Int) -> [TokenModel] {
+        let ranked = models.enumerated().sorted { a, b in
+            let aOthers = a.element.model == TokenModel.foldedTailID
+            let bOthers = b.element.model == TokenModel.foldedTailID
+            if aOthers != bOthers { return bOthers }
+            if a.element.displayTokens != b.element.displayTokens {
+                return a.element.displayTokens > b.element.displayTokens
+            }
+            return a.offset < b.offset
+        }
+        return Array(ranked.map(\.element).prefix(n))
+    }
 }
 
 /// One model's share of a period. `display` is the human label ("Fable 5"); `model`
 /// is the raw id (or the sentinel `"others"` for the folded remainder). Models carry
 /// no floor flag — the period owns that.
 struct TokenModel: Codable, Sendable, Identifiable {
+    /// The daemon's sentinel `model` id for the folded long-tail row — display-
+    /// ranked last by `topModels` no matter its count.
+    static let foldedTailID = "others"
+
     var id: String { model }
     let model: String
     let display: String
@@ -151,6 +182,21 @@ struct TokenModel: Codable, Sendable, Identifiable {
         case inOut = "in_out"
         case splitComplete = "split_complete"
         case costUsd = "cost_usd"
+    }
+
+    /// The model row's cache-inclusive count (same basis as `TokenPeriod
+    /// .displayTokens`). Models carry no `total` field, so this sums the four
+    /// buckets — saturating, because a corrupt file must never overflow-trap the
+    /// menu bar app — and falls back to `in_out` when the split is absent/partial
+    /// (`in_out` can exceed a partial split's sum; `split_complete` marks that and
+    /// drives the "+" — a legacy writer omitting buckets while `split_complete`
+    /// defaults true under-decorates, same acceptable decay as the period side).
+    var displayTokens: UInt64 {
+        let split = [output, cacheRead, cacheCreate].reduce(input) { acc, n in
+            let (sum, overflow) = acc.addingReportingOverflow(n)
+            return overflow ? .max : sum
+        }
+        return max(split, inOut)
     }
 
     init(from decoder: Decoder) throws {
@@ -202,6 +248,15 @@ extension MachineTokens {
             return s + unit.suffix
         }
         return String(n) // unreachable (B always returns above); defensive terminal
+    }
+
+    /// Format a token count for display: `abbreviateCount` plus the same "+" floor
+    /// decoration costs use — an incomplete period's buckets undercount (a stats-cache
+    /// day may have published only combined in+out), so `577M` vs `5.47B+` mirrors
+    /// `$12.40` vs `$268.50+`. A zero count never reads "0+".
+    static func formatCount(_ n: UInt64, isFloor: Bool = false) -> String {
+        let base = abbreviateCount(n)
+        return (isFloor && n > 0) ? base + "+" : base
     }
 
     /// Format a cost: `8.21 → "$8.21"`, floor → `"$8.21+"`, sub-cent `(0, 0.01) →
