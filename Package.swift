@@ -12,7 +12,10 @@ let package = Package(
         .target(
             name: "CCSBarKit",
             path: "Sources/CCSBarKit",
-            resources: [.copy("Fixtures/status.json")]
+            resources: [
+                .copy("Fixtures/status.json"),
+                .copy("Fixtures/tokens.json"),
+            ]
         ),
         // The thin executable: just `@main` → `runCCSBar()`.
         .executableTarget(

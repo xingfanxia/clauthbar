@@ -58,6 +58,14 @@ struct PanelView: View {
         if model.addingAccount {
             AddAccountBanner(model: model)
         }
+        // Machine-wide token usage (TOK-4) — ambient context ABOVE the per-account
+        // status strip, with its own divider to separate the two. Present only when a
+        // tokens.json snapshot exists (startExpanded pins the hover-only detail open
+        // for headless snapshot media, which can't hover).
+        if model.machineTokens != nil {
+            TokensStrip(model: model, startExpanded: model.isPreview)
+            Divider().padding(.horizontal, 12)
+        }
         StatusStrip(model: model)
         Divider().padding(.horizontal, 12)
         accounts(status, dead: dead)

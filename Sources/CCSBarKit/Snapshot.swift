@@ -178,7 +178,8 @@ enum Snapshot {
     /// Render a canonical CBAR-4 state (design §2) or a legacy liveness variant, and
     /// print the resolved state to stderr so the logic is verifiable without eyeballing
     /// the PNG. Canonical: `default` (inspection on active), `inspecting` (a non-active
-    /// row inspected), `mid-switch` (pending), `daemon-dead` (frozen banner + dim).
+    /// row inspected), `mid-switch` (pending), `daemon-dead` (frozen banner + dim),
+    /// `tokens` (machine-wide token strip expanded, TOK-4).
     /// `config` opens the expanded Configure disclosure (§7). Legacy:
     /// `healthy`/`stale`/`schema2`/`skew`.
     @MainActor
@@ -203,6 +204,11 @@ enum Snapshot {
             return
         }
         let nonActive = mock.profiles.first { !$0.active }?.name ?? mock.profiles.first?.name ?? ""
+        // The machine-token strip (TOK-4) is only injected for the `tokens` variant,
+        // so every other snapshot renders the panel exactly as before (strip absent).
+        let tokens: MachineTokens? = variant == "tokens"
+            ? Fixtures.tokensJSONData().flatMap { try? JSONDecoder().decode(MachineTokens.self, from: $0) }
+            : nil
         let exhausted = fixtureExhausted(from: data)
         let broken = fixtureAuthBroken(from: data, active: false)
         let brokenActive = fixtureAuthBroken(from: data, active: true)
@@ -211,6 +217,7 @@ enum Snapshot {
         let (status, liveness, inspected, phase): (DaemonStatus?, StatusModel.Liveness, String?, SwitchMachine.Phase) = {
             switch variant {
             case "inspecting": return (mock, .ok, nonActive, .idle)
+            case "tokens": return (mock, .ok, nil, .idle)
             case "config": return (mock, .ok, nil, .idle)
             case "remove-confirm": return (mock, .ok, nil, .idle)
             case "no-fable": return (fixtureWithoutFable(from: data) ?? mock, .ok, nil, .idle)
@@ -238,7 +245,7 @@ enum Snapshot {
         case .outOfDate(let n): resolved = "outOfDate(schema: \(n))"
         case .down: resolved = "down"
         }
-        let model = StatusModel(preview: status, liveness: liveness, inspected: inspected, phase: phase)
+        let model = StatusModel(preview: status, liveness: liveness, inspected: inspected, phase: phase, tokens: tokens)
         if variant == "config" { model.showConfig = true }
         // Panel-level armed-member removal confirm (§7): arm it on the first armed
         // chain member so the banner renders.

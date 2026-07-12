@@ -35,4 +35,15 @@ enum Fixtures {
         }
         return try? Data(contentsOf: url)
     }
+
+    /// Raw bytes of the bundled `tokens.json` fixture (TOK-4) — the machine-wide
+    /// token snapshot, DEV-ONLY exactly like `statusJSONData()` (same `Bundle.module`
+    /// INVARIANT: never read on the shipped app's hot path). Drives the `tokens`
+    /// snapshot variant and the `MachineTokens` decode contract test.
+    static func tokensJSONData() -> Data? {
+        guard let url = Bundle.module.url(forResource: "tokens", withExtension: "json") else {
+            return nil
+        }
+        return try? Data(contentsOf: url)
+    }
 }

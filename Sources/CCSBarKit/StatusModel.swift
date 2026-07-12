@@ -55,6 +55,10 @@ final class StatusModel: ObservableObject {
     /// Whether the inline "Add account…" editor is open (a name field + Sign in).
     /// Set by the ACCOUNTS-list "Add account…" row, cleared on submit/cancel.
     @Published var addingAccount = false
+    /// The machine-wide token snapshot (TOK-4) from `~/.clauth/tokens.json`, or nil
+    /// when the file is missing / a newer schema / corrupt. Read inside the existing
+    /// poll (no second timer); a nil hides the strip but NEVER blanks the panel.
+    @Published private(set) var machineTokens: MachineTokens?
 
     /// A switch is in flight (arming or pending) — tiles disable to block a second
     /// concurrent switch (M5/TECH-11), now derived from the phase.
@@ -72,6 +76,7 @@ final class StatusModel: ObservableObject {
 
     private var timer: Timer?
     private var lastMtime: Date?
+    private var lastTokensMtime: Date?
     private var settleTask: Task<Void, Never>?
     private var errorClearTask: Task<Void, Never>?
     // Switch-machine effect tasks (CBAR4-3).
@@ -110,12 +115,14 @@ final class StatusModel: ObservableObject {
     /// Preview/snapshot init: inject a fixed status + liveness (+ optional inspection
     /// and switch phase for the canonical-state snapshots), no polling.
     init(preview: DaemonStatus?, liveness: Liveness = .ok,
-         inspected: String? = nil, phase: SwitchMachine.Phase = .idle) {
+         inspected: String? = nil, phase: SwitchMachine.Phase = .idle,
+         tokens: MachineTokens? = nil) {
         self.isPreview = true
         self.status = preview
         self.liveness = liveness
         self.inspectedName = inspected
         self.switchPhase = phase
+        self.machineTokens = tokens
     }
 
     /// The active account is only trustworthy when live — the menu-bar glyph dims
@@ -123,6 +130,10 @@ final class StatusModel: ObservableObject {
     var isHealthy: Bool { liveness == .ok }
 
     func reload() {
+        // The machine-token strip reads its OWN file on its OWN mtime gate, BEFORE the
+        // status republish gate below — otherwise an unchanged status.json (the early
+        // return) would freeze the token numbers even as tokens.json advances.
+        reloadTokens()
         // Republish gate (TECH-14 #31): when status.json hasn't changed, skip the
         // re-decode and don't churn @Published — but STILL recompute liveness,
         // because a file that stopped advancing is exactly the stalled case (its
@@ -148,6 +159,27 @@ final class StatusModel: ObservableObject {
         case .fileMissing, .decodeFailed:
             status = nil
             liveness = .down
+        }
+    }
+
+    /// Read the machine-token snapshot on its own mtime gate (TOK-4). Runs every poll
+    /// tick from `reload()`; skips the re-decode when tokens.json is unchanged. Every
+    /// failure mode degrades QUIETLY to `nil` (strip hidden) — a missing file (no
+    /// daemon snapshot yet), a newer schema (ccsbar out of date), or a corrupt write
+    /// must never blank or error the panel. `readTokens()` already logs a decode
+    /// failure via the os.Logger; the others are benign, so they stay silent.
+    private func reloadTokens() {
+        let mtime = DaemonClient.tokensMtime()
+        if let mtime, mtime == lastTokensMtime, machineTokens != nil { return }
+        lastTokensMtime = mtime
+        switch DaemonClient.readTokens() {
+        case .ok(let t):
+            machineTokens = t
+        case .fileMissing, .schemaUnsupported, .decodeFailed:
+            // Guard the nil re-assignment: with no tokens file (mtime nil), the gate
+            // above can't short-circuit, so an unguarded `= nil` would fire
+            // objectWillChange every 4s tick and re-render the open panel for nothing.
+            if machineTokens != nil { machineTokens = nil }
         }
     }
 

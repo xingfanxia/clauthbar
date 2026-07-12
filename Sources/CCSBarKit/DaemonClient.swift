@@ -11,6 +11,17 @@ enum StatusRead: Sendable {
     case decodeFailed
 }
 
+/// The outcome of reading `tokens.json` (TOK-4) — the machine-wide token snapshot,
+/// versioned independently of status.json. Same four-way split as `StatusRead`, but
+/// every non-ok case degrades to a HIDDEN strip (never a panel-level error state):
+/// the token strip is ambient context, so a missing/newer/corrupt file just drops it.
+enum TokensRead: Sendable {
+    case ok(MachineTokens)
+    case fileMissing
+    case schemaUnsupported(Int)
+    case decodeFailed
+}
+
 /// The outcome of a daemon command (TECH-11). The three cases must NOT collapse to
 /// one nil: a daemon *rejection* (`ok:false` with an `error_code`) is authoritative
 /// and must NOT trigger the daemon-ABSENCE shell fallback, and it carries an error
@@ -42,6 +53,7 @@ enum DaemonClient {
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".clauth")
     }
     static var statusURL: URL { clauthDir.appendingPathComponent("status.json") }
+    static var tokensURL: URL { clauthDir.appendingPathComponent("tokens.json") }
     static var socketPath: String { clauthDir.appendingPathComponent("clauthd.sock").path }
 
     private static let log = Logger(subsystem: "com.clauth.ccsbar", category: "daemon-client")
@@ -75,6 +87,33 @@ enum DaemonClient {
     /// True when the daemon's control socket is present (a daemon is likely live).
     static var daemonSocketExists: Bool {
         FileManager.default.fileExists(atPath: socketPath)
+    }
+
+    // MARK: - Machine tokens (file)
+
+    /// Read tokens.json into one of four outcomes (TOK-4), mirroring `readStatus`:
+    /// probe the schema BEFORE the full decode (a future schema bump reads as
+    /// `.schemaUnsupported`, not `.decodeFailed`), and log — not silently swallow — a
+    /// genuine decode failure. Every non-ok case leaves the caller to hide the strip.
+    static func readTokens() -> TokensRead {
+        guard let data = try? Data(contentsOf: tokensURL) else { return .fileMissing }
+        if let probe = try? JSONDecoder().decode(SchemaProbe.self, from: data),
+           probe.schema != supportedTokensSchema {
+            return .schemaUnsupported(probe.schema)
+        }
+        do {
+            return .ok(try JSONDecoder().decode(MachineTokens.self, from: data))
+        } catch {
+            log.error("tokens.json decode failed: \(error.localizedDescription, privacy: .public)")
+            return .decodeFailed
+        }
+    }
+
+    /// mtime of tokens.json for cheap change detection (its own cadence — the daemon
+    /// rewrites tokens on a different schedule than status).
+    static func tokensMtime() -> Date? {
+        let attrs = try? FileManager.default.attributesOfItem(atPath: tokensURL.path)
+        return attrs?[.modificationDate] as? Date
     }
 
     // MARK: - Commands
