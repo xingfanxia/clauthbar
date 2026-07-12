@@ -130,6 +130,41 @@ final class CommandOutcomeTests: XCTestCase {
         XCTAssertEqual(offPayload?["value"] as? Bool, false)
     }
 
+    // MARK: set_weekly_threshold — payload the daemon validates via as_f64 + range.
+
+    func testSetWeeklyThresholdPayloadShape() {
+        var captured: [String: Any]?
+        let out = DaemonClient.setWeeklyThreshold(97.5, send: { cmd in
+            captured = cmd
+            return .ok
+        })
+        XCTAssertEqual(out, .ok)
+        XCTAssertEqual(captured?["cmd"] as? String, "set_weekly_threshold")
+        // Must be a REAL JSON number — the daemon rejects a string (`as_f64` → None).
+        XCTAssertEqual(captured?["value"] as? Double, 97.5)
+        // Global op: no profile key rides the payload.
+        XCTAssertNil(captured?["profile"])
+    }
+
+    // MARK: custom-threshold parsers — mirror the socket's validation exactly.
+
+    func testCustomThresholdParsersMirrorSocketValidation() {
+        XCTAssertEqual(ChainEdit.parseFiveHourThreshold("85"), 85)
+        XCTAssertEqual(ChainEdit.parseFiveHourThreshold(" 100 "), 100)
+        XCTAssertNil(ChainEdit.parseFiveHourThreshold("101"))
+        XCTAssertNil(ChainEdit.parseFiveHourThreshold("-1"))
+        XCTAssertNil(ChainEdit.parseFiveHourThreshold("95.5"), "5h surface takes whole percents")
+        XCTAssertNil(ChainEdit.parseFiveHourThreshold("abc"))
+
+        XCTAssertEqual(ChainEdit.parseWeeklyLine("97.5"), 97.5)
+        XCTAssertEqual(ChainEdit.parseWeeklyLine("50"), 50)
+        XCTAssertEqual(ChainEdit.parseWeeklyLine("100"), 100)
+        XCTAssertNil(ChainEdit.parseWeeklyLine("49.9"))
+        XCTAssertNil(ChainEdit.parseWeeklyLine("100.1"))
+        XCTAssertNil(ChainEdit.parseWeeklyLine("inf"))
+        XCTAssertNil(ChainEdit.parseWeeklyLine(""))
+    }
+
     // MARK: last_switch / last_error decode (the observability fields).
 
     func testLastSwitchAndLastErrorDecode() throws {

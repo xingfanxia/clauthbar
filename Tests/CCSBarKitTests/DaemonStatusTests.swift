@@ -30,6 +30,7 @@ final class DaemonStatusTests: XCTestCase {
         XCTAssertEqual(status.forecast?.to, "account-2")
         XCTAssertEqual(status.forecast?.outcome, .switchTo("account-2"))
         XCTAssertEqual(status.burnAware, false)
+        XCTAssertEqual(status.weeklySwitchThreshold, 98.0)
         XCTAssertEqual(status.profiles.first { $0.name == "account-1" }?.fallback?.lastResort, false)
         // account-3 is the chain tail marked last resort — exercises the flag badge.
         XCTAssertEqual(status.profiles.first { $0.name == "account-3" }?.fallback?.lastResort, true)

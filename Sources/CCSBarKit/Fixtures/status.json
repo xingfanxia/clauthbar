@@ -137,5 +137,6 @@
     "at": "2026-07-04T04:58:30+00:00",
     "trigger": "scheduler"
   },
-  "last_error": null
+  "last_error": null,
+  "weekly_switch_threshold": 98.0
 }

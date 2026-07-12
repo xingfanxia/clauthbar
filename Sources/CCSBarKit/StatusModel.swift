@@ -36,6 +36,12 @@ final class StatusModel: ObservableObject {
     /// feature's only in-panel proof it fired.
     @Published private(set) var rotationFlash: String?
     @Published var showConfig = false
+    /// Which threshold field is inline-editing a CUSTOM value, if any — armed by
+    /// the "Custom…" affordance on either config surface. The context menu arms
+    /// it too (it also opens the Configure disclosure, where the field lives).
+    @Published var thresholdEdit: ThresholdEditTarget?
+    /// The in-flight text of the custom-threshold field.
+    @Published var thresholdDraft = ""
     /// The chain member awaiting the inline removal confirm (CBAR4-5 §7 — removing
     /// an ARMED member requires an explicit "remove anyway?"). `nil` ⇒ no confirm
     /// pending. Copy comes from `ChainEdit.removalConsequence`.
@@ -588,6 +594,42 @@ final class StatusModel: ObservableObject {
     func setWrapOff(_ on: Bool) {
         run({ DaemonClient.setWrapOff(on) }, expecting: { $0.wrapOff == on })
     }
+    /// Set the chain-wide weekly (7d) exhaustion line (clauth
+    /// `set_weekly_threshold`). Same old-daemon contract as `setLastResort`:
+    /// an unknown cmd surfaces as a loud error banner, never a silent no-op.
+    func setWeeklyThreshold(_ value: Double) {
+        run({ DaemonClient.setWeeklyThreshold(value) },
+            expecting: { ($0.weeklySwitchThreshold ?? ChainEdit.defaultWeeklyLine) == value })
+    }
+
+    /// Open the inline custom-threshold editor, seeded with the current value.
+    /// Also expands the Configure disclosure — the field lives there, so a
+    /// context-menu "Custom…" lands the user in front of it.
+    func beginThresholdEdit(_ target: ThresholdEditTarget, current: String) {
+        showConfig = true
+        thresholdDraft = current
+        thresholdEdit = target
+    }
+
+    /// Commit the typed custom value. Invalid input keeps the field open with
+    /// the inline invalid treatment (the parse helpers are the single gate,
+    /// mirroring the socket's validation) — no toast, no silent clamp.
+    func commitThresholdEdit() {
+        guard let target = thresholdEdit else { return }
+        switch target {
+        case .fiveHour(let name):
+            guard let v = ChainEdit.parseFiveHourThreshold(thresholdDraft) else { return }
+            setThreshold(name, v)
+        case .weekly:
+            guard let v = ChainEdit.parseWeeklyLine(thresholdDraft) else { return }
+            setWeeklyThreshold(v)
+        }
+        thresholdEdit = nil
+    }
+
+    func cancelThresholdEdit() {
+        thresholdEdit = nil
+    }
     // Refreshes are usage re-fetches, not config edits — no "Applying…" shimmer.
     // (Explicit `work:`-position arg, not a trailing closure, so it can't bind to
     // the optional `expecting` closure param instead.)
@@ -845,4 +887,11 @@ final class StatusModel: ObservableObject {
             }
         }
     }
+}
+
+/// The two custom-threshold fields the Configure disclosure can inline-edit
+/// (§7): a member's 5h leave-at percent, or the chain-wide weekly line.
+enum ThresholdEditTarget: Equatable {
+    case fiveHour(String)
+    case weekly
 }

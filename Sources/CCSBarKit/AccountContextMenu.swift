@@ -87,6 +87,13 @@ struct AccountContextMenu: View {
                         }
                     }
                 }
+                Divider()
+                // Free-typed percent — the field lives in the Configure
+                // disclosure, so this arms it and opens the panel there.
+                Button(ChainEdit.customLabel) {
+                    model.beginThresholdEdit(
+                        .fiveHour(p.name), current: "\(Int(fb.threshold))")
+                }
             }
             .disabled(!reachable)
 

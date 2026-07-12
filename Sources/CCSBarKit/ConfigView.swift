@@ -40,6 +40,8 @@ struct ConfigView: View {
                     }
                     legends
                     Divider().padding(.vertical, 4)
+                    weeklyRow
+                    Divider().padding(.vertical, 4)
                     wrapOffRadio
                 }
                 .animation(.easeInOut(duration: 0.2), value: status.fallbackChain)
@@ -75,7 +77,14 @@ struct ConfigView: View {
                 .frame(width: 84, alignment: .leading)
 
             if let fb = p.fallback {
-                thresholdMenu(for: p, fb: fb)
+                if model.thresholdEdit == .fiveHour(p.name) {
+                    customThresholdField(
+                        valid: ChainEdit.parseFiveHourThreshold(model.thresholdDraft) != nil,
+                        help: "0–100, whole percent"
+                    )
+                } else {
+                    thresholdMenu(for: p, fb: fb)
+                }
 
                 Spacer()
 
@@ -103,6 +112,10 @@ struct ConfigView: View {
         Menu {
             ForEach(ChainEdit.thresholdPresets, id: \.self) { v in
                 Button(ChainEdit.thresholdLabel(v)) { model.setThreshold(p.name, v) }
+            }
+            Divider()
+            Button(ChainEdit.customLabel) {
+                model.beginThresholdEdit(.fiveHour(p.name), current: "\(Int(fb.threshold))")
             }
         } label: {
             HStack(spacing: 3) {
@@ -158,6 +171,87 @@ struct ConfigView: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .help(help)
+    }
+
+    // MARK: - Weekly line (chain-wide, clauth set_weekly_threshold)
+
+    /// The chain-wide weekly (7d) line: label + preset capsule (with Custom…),
+    /// or the inline editor while a custom value is being typed. One value for
+    /// the whole chain — auto-switch gates BOTH walk directions on it.
+    private var weeklyRow: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 8) {
+                Text("Weekly limit")
+                    .font(.body).fontWeight(.medium)
+                if model.thresholdEdit == .weekly {
+                    customThresholdField(
+                        valid: ChainEdit.parseWeeklyLine(model.thresholdDraft) != nil,
+                        help: "50–100, decimals allowed"
+                    )
+                } else {
+                    weeklyMenu
+                }
+                Spacer()
+            }
+            .frame(height: rowHeight)
+            Text(ChainEdit.weeklyLegend)
+                .font(.subheadline).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var weeklyMenu: some View {
+        let current = status.weeklySwitchThreshold ?? ChainEdit.defaultWeeklyLine
+        return Menu {
+            ForEach(ChainEdit.weeklyPresets, id: \.self) { v in
+                Button(ChainEdit.weeklyLabel(v)) { model.setWeeklyThreshold(v) }
+            }
+            Divider()
+            Button(ChainEdit.customLabel) {
+                model.beginThresholdEdit(.weekly, current: ChainEdit.weeklyLabel(current)
+                    .replacingOccurrences(of: "%", with: ""))
+            }
+        } label: {
+            HStack(spacing: 3) {
+                Text(ChainEdit.weeklyLabel(current)).monospacedDigit()
+                Image(systemName: "chevron.down").font(.system(size: 10))
+            }
+            .font(.body)
+            .padding(.vertical, 3).padding(.horizontal, 9)
+            .frame(minHeight: rowHeight - 6)
+            .background(Color.primary.opacity(0.07), in: Capsule())
+            .contentShape(Capsule())
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .fixedSize()
+        .help(ChainEdit.weeklyLegend)
+    }
+
+    /// The shared inline custom-value field (§7): a compact capsule TextField.
+    /// ⏎ commits through the model (which validates via the same pure parsers
+    /// the socket mirrors); ⎋ cancels; invalid input tints the field DANGER and
+    /// keeps it open. `help` names the legal band.
+    private func customThresholdField(valid: Bool, help: String) -> some View {
+        HStack(spacing: 4) {
+            TextField("", text: Binding(
+                get: { model.thresholdDraft },
+                set: { model.thresholdDraft = $0 }
+            ))
+            .textFieldStyle(.plain)
+            .font(.body.monospacedDigit())
+            .multilineTextAlignment(.trailing)
+            .frame(width: 44)
+            .onSubmit { model.commitThresholdEdit() }
+            .onExitCommand { model.cancelThresholdEdit() }
+            Text("%").font(.body).foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 3).padding(.horizontal, 9)
+        .frame(minHeight: rowHeight - 6)
+        .background(Color.primary.opacity(0.07), in: Capsule())
+        .overlay(Capsule().strokeBorder(
+            valid ? Theme.accent.opacity(0.6) : Theme.danger, lineWidth: 1))
         .help(help)
     }
 

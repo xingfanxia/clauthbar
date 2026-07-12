@@ -47,6 +47,10 @@ struct DaemonStatus: Codable, Sendable {
     /// older daemons. A daemon new enough to report this also publishes
     /// `forecast`, so the burn-aware gap in the mirror never actually runs.
     let burnAware: Bool?
+    /// The chain-wide weekly (7d) exhaustion line (percent) auto-switch gates on
+    /// in BOTH walk directions (clauth `weekly_switch_threshold`, default 98).
+    /// Additive; `nil` on older daemons → treat as 98 (`ChainEdit.defaultWeeklyLine`).
+    let weeklySwitchThreshold: Double?
 
     enum CodingKeys: String, CodingKey {
         case schema
@@ -62,6 +66,7 @@ struct DaemonStatus: Codable, Sendable {
         case lastError = "last_error"
         case forecast
         case burnAware = "burn_aware"
+        case weeklySwitchThreshold = "weekly_switch_threshold"
     }
 
     /// Decode additively — every field the daemon added after schema 1 is
@@ -81,6 +86,7 @@ struct DaemonStatus: Codable, Sendable {
         lastError = try c.decodeIfPresent(LastError.self, forKey: .lastError)
         forecast = try c.decodeIfPresent(DaemonForecast.self, forKey: .forecast)
         burnAware = try c.decodeIfPresent(Bool.self, forKey: .burnAware)
+        weeklySwitchThreshold = try c.decodeIfPresent(Double.self, forKey: .weeklySwitchThreshold)
     }
 }
 

@@ -36,11 +36,15 @@ final class ForecastEngineTests: XCTestCase {
         """
     }
 
-    private func status(active: String, wrapOff: Bool = false, chain: [String], profiles: [String]) -> DaemonStatus {
+    private func status(
+        active: String, wrapOff: Bool = false, weeklyLine: Double? = nil,
+        chain: [String], profiles: [String]
+    ) -> DaemonStatus {
         let chainJSON = chain.map { "\"\($0)\"" }.joined(separator: ",")
+        let weeklyJSON = weeklyLine.map { ",\"weekly_switch_threshold\":\($0)" } ?? ""
         let json = """
         {"schema":1,"generated_at":"\(iso(base))","active_profile":"\(active)",
-         "wrap_off":\(wrapOff),"refresh_interval_ms":90000,
+         "wrap_off":\(wrapOff),"refresh_interval_ms":90000\(weeklyJSON),
          "fallback_chain":[\(chainJSON)],"profiles":[\(profiles.joined(separator: ","))]}
         """
         return try! JSONDecoder().decode(DaemonStatus.self, from: Data(json.utf8))
@@ -193,7 +197,7 @@ final class ForecastEngineTests: XCTestCase {
     }
 }
 
-// MARK: - weekly hard block parity (fallback.rs WEEKLY_BLOCK_PCT)
+// MARK: - weekly line parity (fallback.rs weekly_blocked_info, default 98)
 
 extension ForecastEngineTests {
     /// Profile fragment with an overall 7d window and NO 5h window at all —
@@ -222,12 +226,13 @@ extension ForecastEngineTests {
         XCTAssertEqual(ForecastEngine.nextTarget(s, now: now), .switchTo("c"))
     }
 
-    /// 99.9% still serves requests, and a PAST weekly reset is a renewed quota
-    /// — neither blocks.
-    func testWeeklyBelowCapOrLapsedStillHasHeadroom() {
+    /// Below the 98 default line is headroom, and a PAST weekly reset is a
+    /// renewed quota — neither blocks. (99.9 used to be headroom under the old
+    /// 100 hard cap; the 2026-07-12 soft line moved it past the default.)
+    func testWeeklyBelowLineOrLapsedStillHasHeadroom() {
         let below = status(active: "a", chain: ["a", "b"], profiles: [
             profile("a", util: 97),
-            weeklyProfile("b", util: 99.9),
+            weeklyProfile("b", util: 97.9),
         ])
         XCTAssertEqual(ForecastEngine.nextTarget(below, now: now), .switchTo("b"))
         let renewed = status(active: "a", chain: ["a", "b"], profiles: [
@@ -235,5 +240,23 @@ extension ForecastEngineTests {
             weeklyProfile("b", util: 100, live: false),
         ])
         XCTAssertEqual(ForecastEngine.nextTarget(renewed, now: now), .switchTo("b"))
+    }
+
+    /// The line rides status.json (`weekly_switch_threshold`): at a configured
+    /// 90 a member riding 7d 92% is spent; absent (old daemon) the 98 default
+    /// applies and the same member is headroom.
+    func testWeeklyLineIsConfigurable() {
+        let tightened = status(active: "a", weeklyLine: 90, chain: ["a", "b", "c"], profiles: [
+            profile("a", util: 97),
+            weeklyProfile("b", util: 92),
+            profile("c", util: 10),
+        ])
+        XCTAssertEqual(ForecastEngine.nextTarget(tightened, now: now), .switchTo("c"))
+        let defaulted = status(active: "a", chain: ["a", "b", "c"], profiles: [
+            profile("a", util: 97),
+            weeklyProfile("b", util: 92),
+            profile("c", util: 10),
+        ])
+        XCTAssertEqual(ForecastEngine.nextTarget(defaulted, now: now), .switchTo("b"))
     }
 }

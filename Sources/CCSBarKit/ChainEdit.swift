@@ -12,8 +12,56 @@ enum ChainEdit {
     /// The auto-switch threshold presets offered in both surfaces (§7) — the 5h
     /// utilization at which auto-switch LEAVES the account. Independent of the
     /// last-resort flag (a member can leave at 80% and still be the chain's last
-    /// resort); see `lastResortLabel`.
+    /// resort); see `lastResortLabel`. "Custom…" beside them accepts any whole
+    /// percent in `fiveHourCustomRange`.
     static let thresholdPresets = [50, 80, 90, 95, 100]
+
+    /// Legal band for a CUSTOM 5h threshold — mirrors the daemon socket's
+    /// `set_threshold` validation (0…100) exactly, so the field rejects
+    /// precisely what the socket would.
+    static let fiveHourCustomRange = 0...100
+
+    /// Parse a typed custom 5h threshold: a whole percent inside
+    /// `fiveHourCustomRange` (the socket takes integers from this surface).
+    /// `nil` = keep the field open with the invalid treatment.
+    static func parseFiveHourThreshold(_ raw: String) -> Int? {
+        guard let v = Int(raw.trimmingCharacters(in: .whitespaces)),
+              fiveHourCustomRange.contains(v) else { return nil }
+        return v
+    }
+
+    /// The chain-wide weekly (7d) line presets (clauth `set_weekly_threshold`).
+    /// 100 reproduces the old hard-cap behavior (leave only once the API
+    /// already refuses).
+    static let weeklyPresets: [Double] = [90, 95, 98, 100]
+
+    /// The default weekly line a daemon that predates the field is running
+    /// (clauth `DEFAULT_WEEKLY_SWITCH_PCT`).
+    static let defaultWeeklyLine: Double = 98
+
+    /// Legal band for a custom weekly line — mirrors the daemon socket's
+    /// `set_weekly_threshold` validation (50…100) exactly.
+    static let weeklyCustomRange: ClosedRange<Double> = 50...100
+
+    /// Parse a typed custom weekly line: a percent (decimals allowed) inside
+    /// `weeklyCustomRange`. `nil` = keep the field open, invalid treatment.
+    static func parseWeeklyLine(_ raw: String) -> Double? {
+        guard let v = Double(raw.trimmingCharacters(in: .whitespaces)),
+              v.isFinite, weeklyCustomRange.contains(v) else { return nil }
+        return v
+    }
+
+    /// Label for a weekly value — no trailing `.0` on whole percents.
+    static func weeklyLabel(_ value: Double) -> String {
+        value.truncatingRemainder(dividingBy: 1) == 0
+            ? "\(Int(value))%" : "\(value)%"
+    }
+
+    /// The one-line legend under the weekly control: what the number MEANS.
+    static let weeklyLegend = "Auto-switch treats an account past this share of its weekly (7d) window as spent — it leaves early instead of bricking for days at 100%."
+
+    /// The menu/editor affordance label for a free-typed value (§7).
+    static let customLabel = "Custom…"
 
     /// Chain members first — ordered by their index in `chain` (the `fallbackChain`
     /// name array, the SAME source the chain-rail chips and the detail-card ordinal

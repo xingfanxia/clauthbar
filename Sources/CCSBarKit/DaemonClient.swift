@@ -222,6 +222,23 @@ enum DaemonClient {
         sendCommand(["cmd": "set_wrap_off", "value": on])
     }
 
+    /// Set the chain-wide weekly (7d) exhaustion line (clauth
+    /// `set_weekly_threshold`, 50…100). An OLD daemon without the command replies
+    /// `ok:false` ("unknown cmd") → `.daemonError`, surfaced loudly by the caller.
+    @discardableResult
+    static func setWeeklyThreshold(_ value: Double) -> CommandOutcome {
+        setWeeklyThreshold(value, send: { sendCommand($0) })
+    }
+
+    /// Testable seam mirroring `setLastResort`'s: asserts the payload shape (the
+    /// daemon validates `value` with `as_f64` against 50…100) without a socket.
+    static func setWeeklyThreshold(
+        _ value: Double,
+        send: ([String: Any]) -> CommandOutcome
+    ) -> CommandOutcome {
+        send(["cmd": "set_weekly_threshold", "value": value])
+    }
+
     /// Rename a profile. The daemon validates the new name (charset + collision)
     /// synchronously and returns `ok:false` with a reason on rejection; on accept it
     /// renames the profile dir + every reference and re-links the credential mirror if
