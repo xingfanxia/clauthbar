@@ -81,9 +81,15 @@ shape — a near-threshold dot, a switch-in-flight ellipsis, a rotation glyph, a
 `bolt.slash` when auto-switch is disarmed, or a warning triangle + frozen age when
 the daemon dies (the % is withheld rather than shown stale). Clicking it opens a
 translucent SwiftUI panel (`MenuBarExtra(.window)`, matching CodexBar's look), laid
-out top to bottom as **status strip → account list → detail card → chain rail →
-actions**:
+out top to bottom as **tokens strip → status strip → account list → detail card →
+chain rail → actions**:
 
+- a **tokens strip** (when the daemon publishes `~/.clauth/tokens.json`) — machine-wide
+  Claude Code token spend across ALL accounts, collapsed to one line ("Tokens today
+  577M · $12.40"); hover expands a today/week/month/lifetime table plus top models.
+  Counts are **cache-inclusive** so they track the dollar figure beside them (cost
+  always prices cache tokens), with a `+` on any window whose buckets undercount —
+  the same floor idiom as `$X+`.
 - a **status strip** — the single place exceptional truth appears, priority-ordered:
   a dead-daemon banner (with a one-click **Start daemon**) > the switch lifecycle
   (arm / switching… / switched / failed) > a wrap-off "all off, resumes when a
@@ -190,6 +196,9 @@ Implemented (the CBAR-4 "Preflight" redesign):
   the `rename` socket command, which renames the profile dir + every reference and
   re-links the credential mirror if it's the active account (so a live session follows
   the rename). An invalid/taken name surfaces a loud error and never fires the socket.
+- **Machine-wide tokens strip (TOK-4/TOK-6)** — `~/.clauth/tokens.json` rendered as a
+  hover-expanding spend summary; cache-inclusive counts with `+` floor markers, own
+  schema gate + additive decode so a version gap hides the strip instead of crashing.
 - **Distinct daemon-liveness states** — never-started (empty state) vs frozen (dead
   banner over dimmed last-known data, % withheld) vs schema-too-new (out-of-date).
 - Runs as an accessory app (no Dock icon); packaged as an ad-hoc-signed `.app`.
