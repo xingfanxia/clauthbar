@@ -17,6 +17,19 @@ struct AccountRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             header
+            // WHICH login this profile holds (CAP-3), a dim caption indented
+            // under the name — the list-row sibling of DetailCard's email line
+            // (and ccu's). Only OAuth profiles carry account_email, so no
+            // provider gate is needed.
+            if let email = p.accountEmail {
+                Text(email)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .padding(.leading, 18)
+                    .padding(.top, -3)
+            }
             if p.provider != "anthropic" {
                 thirdPartyLine
             } else {
