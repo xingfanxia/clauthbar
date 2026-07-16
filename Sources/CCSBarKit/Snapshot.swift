@@ -256,6 +256,7 @@ enum Snapshot {
             case "tab-overview": return (mock, .ok, nil, .idle, .overview)
             case "tab-codex": return (mock, .ok, nil, .idle, .codex)
             case "codex-empty": return (fixtureWithoutCodex(from: data) ?? mock, .ok, nil, .idle, .codex)
+            case "add-codex": return (mock, .ok, nil, .idle, .codex)
             // default / healthy: inspected=nil resolves to the ACTIVE account (the real
             // first-open path — StatusModel.inspected falls back to active), so this
             // renders the one card that carries the "pick another account above to
@@ -280,6 +281,10 @@ enum Snapshot {
             model.pendingRemoval = mock.profiles.first { $0.fallback?.armed == true }?.name
         }
         if variant == "rename" { model.renaming = nonActive }
+        // The codex add-account editor open on the Codex page (TABS-1) — pins the
+        // two-row layout (field, then Cancel / Capture / Sign in) that keeps the
+        // primary verb un-truncated at 340pt.
+        if variant == "add-codex" { model.addingHarness = .codex }
         let skewNote = model.versionSkew.map { " skew=\($0)" } ?? ""
         let phaseNote = phase == .idle ? "" : " phase=\(phase)"
         let inspectNote = inspected.map { " inspected=\($0)" } ?? ""

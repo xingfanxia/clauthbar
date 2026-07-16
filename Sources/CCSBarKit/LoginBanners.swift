@@ -94,15 +94,19 @@ struct AddAccountBanner: View {
         VStack(alignment: .leading, spacing: 6) {
             Text(harness == .codex ? "Add codex account" : "Add account")
                 .font(.subheadline).fontWeight(.medium)
-            HStack(spacing: 6) {
+            if harness == .codex {
+                // TWO rows for codex: the name field + three buttons cannot share
+                // one 340pt row without truncating the PRIMARY verb ("Capture
+                // cu…" — observed live). Field gets its own line; verbs below.
                 TextField("new profile name", text: $name)
                     .textFieldStyle(.roundedBorder)
                     .focused($focused)
-                    // ⏎ takes the harness's PRIMARY door: claude browser sign-in;
-                    // codex capture (the common case — codex is already signed in).
-                    .onSubmit { commit(harness == .codex ? .capture : .browser) }
-                Button("Cancel") { model.cancelAddAccount() }.controlSize(.small)
-                if harness == .codex {
+                    // ⏎ takes the PRIMARY door: capture (the common case — codex
+                    // is already signed in on this machine).
+                    .onSubmit { commit(.capture) }
+                HStack(spacing: 6) {
+                    Button("Cancel") { model.cancelAddAccount() }.controlSize(.small)
+                    Spacer(minLength: 4)
                     Button("Capture current login") { commit(.capture) }
                         .controlSize(.small).tint(Theme.accent)
                         .disabled(commitDisabled)
@@ -112,7 +116,14 @@ struct AddAccountBanner: View {
                         .controlSize(.small)
                         .disabled(commitDisabled)
                         .help("Opens your browser for a fresh codex sign-in.")
-                } else {
+                }
+            } else {
+                HStack(spacing: 6) {
+                    TextField("new profile name", text: $name)
+                        .textFieldStyle(.roundedBorder)
+                        .focused($focused)
+                        .onSubmit { commit(.browser) }
+                    Button("Cancel") { model.cancelAddAccount() }.controlSize(.small)
                     Button("Sign in…") { commit(.browser) }
                         .controlSize(.small).tint(Theme.accent)
                         // Also disabled while ANY login runs (the single-login
