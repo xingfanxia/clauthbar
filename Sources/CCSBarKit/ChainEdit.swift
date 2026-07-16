@@ -96,6 +96,14 @@ enum ChainEdit {
         wrapOff ? "when spent: switch everything off" : "when spent: stay on last account"
     }
 
+    /// The CODEX chain rail's when-spent line (TABS-1). Codex has NO wrap-off —
+    /// the daemon rotates the codex slot at the session boundary when the active
+    /// login hits a limiter window, and simply stays put when every member is
+    /// limited — so the claude wrap-off wording would describe a behavior codex
+    /// never performs.
+    static let codexWhenSpentSummary =
+        "when limited: rotates at the session boundary; stays put when all are limited"
+
     /// The one-line legend under the threshold controls (§7): says what the number
     /// MEANS so "95%" isn't read as "switch TO this at 95%".
     static let thresholdLegend = "Auto-switch LEAVES this account at this 5h usage."

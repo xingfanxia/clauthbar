@@ -58,9 +58,8 @@ struct DaemonStatus: Codable, Sendable {
     let activeCodexProfile: String?
     /// The codex auto-switch chain (INT-2) — same shape as `fallbackChain` but for the
     /// codex slot. Empty on codex-less installs / older daemons. Codex profiles are
-    /// NEVER in `fallbackChain`; they live here only. DEFERRED: decoded for contract
-    /// conformance, but the codex chain-rail visual editor is not built yet — no panel
-    /// surface reads this field.
+    /// NEVER in `fallbackChain`; they live here only. Consumed by the Codex tab's
+    /// chain rail + config editor (TABS-1).
     let codexFallbackChain: [String]
 
     enum CodingKeys: String, CodingKey {
@@ -103,6 +102,35 @@ struct DaemonStatus: Codable, Sendable {
         activeCodexProfile = try c.decodeIfPresent(String.self, forKey: .activeCodexProfile)
         codexFallbackChain = try c.decodeIfPresent([String].self, forKey: .codexFallbackChain) ?? []
     }
+}
+
+/// Which agent harness a profile switches (TABS-1) — the Swift mirror of clauth's
+/// per-profile `harness` field. Two independent active slots exist, one per case;
+/// the daemon routes every socket command by the profile's own harness, so this
+/// only has to pick WHICH published slot/chain to read, never how to route.
+enum Harness: String, CaseIterable, Sendable {
+    case claude, codex
+}
+
+extension DaemonStatus {
+    /// The published active slot for a harness: `active_profile` (claude) or
+    /// `active_codex_profile` (codex). The harness-aware switch confirm observes
+    /// THIS — watching `activeProfile` for a codex switch would never confirm.
+    func activeName(for harness: Harness) -> String? {
+        harness == .codex ? activeCodexProfile : activeProfile
+    }
+
+    /// The harness's auto-switch chain — `fallback_chain` or `codex_fallback_chain`.
+    /// Chains are per-harness by construction daemon-side (a codex `fallback_add`
+    /// joins the codex chain), so membership never overlaps.
+    func chain(for harness: Harness) -> [String] {
+        harness == .codex ? codexFallbackChain : fallbackChain
+    }
+}
+
+extension ProfileStatus {
+    /// The profile's harness as the typed enum (`harness` is the raw wire string).
+    var harnessKind: Harness { isCodex ? .codex : .claude }
 }
 
 /// The daemon's published next-move forecast, mirrored from `status.json.forecast`

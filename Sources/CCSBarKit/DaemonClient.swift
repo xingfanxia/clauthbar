@@ -413,15 +413,35 @@ enum DaemonClient {
         return nil
     }
 
-    /// Run `clauth login <name>` — the self-contained browser OAuth flow (opens the
-    /// browser, binds a loopback listener, PKCE). Since clauth v0.8.0 this ONE verb
-    /// serves BOTH ccsbar login surfaces: a NEW `name` CREATES the profile, an
-    /// EXISTING `name` re-authenticates it (clearing its `auth_broken` flag). Awaits
-    /// the process through its termination handler — no parked thread while the
-    /// (potentially long) browser sign-in runs. On exit 0 the CLI has written fresh
-    /// tokens (and, for a new name, the profile) to config; the daemon reflects that on
-    /// its next status.json write. Works with the daemon up OR down — a pure CLI login,
-    /// no socket needed. The caller's in-flight window is bounded by clauth's own
+    /// The exact `clauth login` argv for a login shape (TABS-1). Pure and
+    /// unit-tested — the four CLI shapes ccsbar can spawn:
+    /// claude browser (`login [--new] <name>`), codex capture
+    /// (`… --codex` — copies the live ~/.codex/auth.json, instant, no browser),
+    /// codex browser PKCE (`… --codex --browser`). `browser` is codex-only on the
+    /// CLI (a claude login is always a browser flow; bare `--browser` is a usage
+    /// error), so it's emitted only alongside `--codex`.
+    static func loginArgs(_ name: String, newOnly: Bool, codex: Bool, browser: Bool) -> [String] {
+        var args = ["login"]
+        if newOnly { args.append("--new") }
+        args.append(name)
+        if codex {
+            args.append("--codex")
+            if browser { args.append("--browser") }
+        }
+        return args
+    }
+
+    /// Run `clauth login <name>` — the self-contained login flow. Since clauth
+    /// v0.8.0 this ONE verb serves BOTH ccsbar login surfaces: a NEW `name` CREATES
+    /// the profile, an EXISTING `name` re-authenticates it (clearing its
+    /// `auth_broken` flag). TABS-1 adds the codex shapes: `codex: true` captures the
+    /// live codex login (instant, no browser); `codex: true, browser: true` mints a
+    /// fresh one via the PKCE browser flow. Awaits the process through its
+    /// termination handler — no parked thread while the (potentially long) browser
+    /// sign-in runs. On exit 0 the CLI has written fresh tokens (and, for a new
+    /// name, the profile) to config; the daemon reflects that on its next
+    /// status.json write. Works with the daemon up OR down — a pure CLI login, no
+    /// socket needed. The caller's in-flight window is bounded by clauth's own
     /// `LOGIN_TIMEOUT_SECS` (180s in `oauth_login.rs`), so no client-side timeout is
     /// needed. Exit 0 → `.ok`; non-zero / timed-out → `.daemonError`; no binary → `.unreachable`.
     /// `newOnly` passes `--new`, pinning CREATE semantics: clauth refuses (exit ≠ 0)
@@ -430,11 +450,13 @@ enum DaemonClient {
     /// the last-polled snapshot, so a profile minted out-of-band inside the poll
     /// window would otherwise be silently re-authenticated (non-TTY spawns never see
     /// clauth's confirm prompt).
-    static func login(_ name: String, newOnly: Bool = false) async -> CommandOutcome {
+    static func login(
+        _ name: String, newOnly: Bool = false, codex: Bool = false, browser: Bool = true
+    ) async -> CommandOutcome {
         guard let bin = clauthBinary() else { return .unreachable }
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: bin)
-        proc.arguments = newOnly ? ["login", "--new", name] : ["login", name]
+        proc.arguments = loginArgs(name, newOnly: newOnly, codex: codex, browser: browser)
         return await withCheckedContinuation { (cont: CheckedContinuation<CommandOutcome, Never>) in
             proc.terminationHandler = { p in
                 let status = p.terminationStatus

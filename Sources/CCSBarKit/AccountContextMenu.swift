@@ -40,15 +40,29 @@ struct AccountContextMenu: View {
         Button("Refresh \(p.name)") { model.refresh(p.name) }
             .disabled(!model.daemonReachable)
 
-        // Browser reauth (AUTH-3) — for OAuth (anthropic) accounts only; third-party
-        // api-key profiles have no login to renew. Offered generally, not just when
-        // broken, so a flaky login can be refreshed proactively. The in-flight state
-        // shows in the panel-top banner (global), so this is visible even when the
-        // inspected card isn't the broken-account reauth surface.
+        // Reauth (AUTH-3) — for OAuth (anthropic) accounts and codex profiles;
+        // third-party api-key profiles have no login to renew. Offered generally,
+        // not just when broken, so a flaky login can be refreshed proactively. The
+        // in-flight state shows in the panel-top banner (global), so this is
+        // visible even when the inspected card isn't the reauth surface.
         if p.provider == "anthropic" {
             Button(p.authBroken ? "Log in again (browser)" : "Re-authenticate (browser)") {
                 model.inspect(p.name)
                 model.reauth(p.name)
+            }
+            .disabled(model.reauthInFlight != nil)
+        } else if p.isCodex {
+            // TABS-1: a codex profile has TWO recovery doors — a fresh PKCE browser
+            // sign-in, or the instant re-capture of whatever login codex currently
+            // holds (useful after signing in inside codex itself).
+            Button(p.authBroken ? "Log in again (browser)" : "Re-authenticate (browser)") {
+                model.inspect(p.name)
+                model.reauth(p.name, codex: true, mode: .browser)
+            }
+            .disabled(model.reauthInFlight != nil)
+            Button("Re-capture from codex login") {
+                model.inspect(p.name)
+                model.reauth(p.name, codex: true, mode: .capture)
             }
             .disabled(model.reauthInFlight != nil)
         }
@@ -112,8 +126,11 @@ struct AccountContextMenu: View {
 
             Button("Move up") { model.fallbackMove(p.name, up: true) }
                 .disabled(!reachable || fb.position <= 1)
+            // The tail bound is the profile's OWN harness's chain (TABS-1) — a
+            // codex member's position indexes codex_fallback_chain, and the claude
+            // chain's length would wrongly enable/disable it.
             Button("Move down") { model.fallbackMove(p.name, up: false) }
-                .disabled(!reachable || fb.position >= status.fallbackChain.count)
+                .disabled(!reachable || fb.position >= status.chain(for: p.harnessKind).count)
 
             Button("Remove from chain") { model.requestRemove(p.name) }
                 .disabled(!reachable)

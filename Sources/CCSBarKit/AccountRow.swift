@@ -11,6 +11,9 @@ struct AccountRow: View {
     let inspected: Bool
     let dead: Bool
     let frozenStamp: String? // "as of 4m ago" when dead, else nil
+    /// Show the "codex" harness pill (TABS-1): true in mixed-harness contexts;
+    /// false inside a harness-scoped page, where the tab already says it.
+    var showHarnessTag = true
     let onInspect: () -> Void
     @State private var hovering = false
 
@@ -85,7 +88,8 @@ struct AccountRow: View {
             // INT-2: a small "codex" harness tag so a user seeing TWO checkmarked rows
             // (one claude-active, one codex-active) reads them as two independent slots,
             // not a duplicate-active bug. Mirrors the tier/provider caption's altitude.
-            if p.isCodex {
+            // Hidden inside harness-scoped pages (TABS-1 — the tab already scopes it).
+            if p.isCodex && showHarnessTag {
                 Text("codex")
                     .font(.system(size: 10)).fontWeight(.medium)
                     .padding(.vertical, 1).padding(.horizontal, 5)

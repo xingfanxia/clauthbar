@@ -138,6 +138,12 @@
       "bell_threshold": null,
       "codex_snapshot_at": "2026-07-03T12:00:00+00:00",
       "codex_rate_limit_reached": null,
+      "fallback": {
+        "position": 1,
+        "threshold": 95,
+        "armed": true,
+        "last_resort": false
+      },
       "windows": [
         {
           "label": "5h",
@@ -152,9 +158,45 @@
       ],
       "third_party": null,
       "account_email": "codex@example.com"
+    },
+    {
+      "name": "codex-2",
+      "active": false,
+      "provider": "openai",
+      "harness": "codex",
+      "base_url": null,
+      "tier": "plus",
+      "has_live_session": false,
+      "fetch_status": "Fresh",
+      "fetched_at": "2026-07-04T04:58:00+00:00",
+      "next_refresh_at": null,
+      "auto_start": false,
+      "bell_threshold": null,
+      "codex_snapshot_at": "2026-06-28T09:00:00+00:00",
+      "codex_rate_limit_reached": null,
+      "fallback": {
+        "position": 2,
+        "threshold": 95,
+        "armed": false,
+        "last_resort": false
+      },
+      "windows": [
+        {
+          "label": "5h",
+          "utilization_pct": 12,
+          "resets_at": "2026-07-04T19:30:00.000000+00:00"
+        },
+        {
+          "label": "7d",
+          "utilization_pct": 9,
+          "resets_at": "2026-07-10T00:00:00.000000+00:00"
+        }
+      ],
+      "third_party": null,
+      "account_email": "codex-two@example.com"
     }
   ],
-  "clauth_version": "0.7.4",
+  "clauth_version": "0.11.0",
   "burn_aware": false,
   "forecast": {
     "action": "switch",
@@ -171,6 +213,7 @@
   "weekly_switch_threshold": 98.0,
   "active_codex_profile": "codex-1",
   "codex_fallback_chain": [
-    "codex-1"
+    "codex-1",
+    "codex-2"
   ]
 }

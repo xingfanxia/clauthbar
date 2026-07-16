@@ -113,10 +113,11 @@ struct DetailCard: View {
         // OAuth dropped is the most urgent reauth case (the running claude sessions are
         // already failing on it), so the recovery verb must show even when p.active —
         // otherwise the one account you can't switch away from hides its only fix.
-        // Only OAuth (anthropic) accounts have a browser login to renew; the daemon
-        // never marks a third-party api-key profile auth_broken, but guard anyway so the
-        // reauth surface and the context-menu item agree on who can reauth.
-        if p.authBroken && p.provider == "anthropic" {
+        // OAuth (anthropic) accounts renew via browser; codex profiles renew via the
+        // codex PKCE browser flow (TABS-1). Third-party api-key profiles have no
+        // login to renew — the daemon never marks them auth_broken, but guard anyway
+        // so this surface and the context-menu item agree on who can reauth.
+        if p.authBroken && (p.provider == "anthropic" || p.isCodex) {
             reauthSurface
         } else if p.active {
             activeState
@@ -143,20 +144,25 @@ struct DetailCard: View {
             .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.accent.opacity(0.5), lineWidth: 1))
             // The active account has no switch verb — so name the path. This is the
             // one spot a first-time user looks for "how do I switch?" (the panel opens
-            // with the active account inspected, i.e. on exactly this card).
-            if model.listProfiles.count > 1 {
+            // with the active account inspected, i.e. on exactly this card). The count
+            // is HARNESS-scoped (TABS-1): "above" means this page's list, and a
+            // single-codex page must not point at claude rows it doesn't show.
+            if model.profiles(for: p.harnessKind).count > 1 {
                 Text("Pick another account above to switch to it.")
                     .font(.caption).foregroundStyle(.tertiary)
             }
         }
     }
 
-    /// AUTH-3: the account's OAuth login dropped (`auth_broken`). Instead of a
-    /// dead-end "run clauth login" hint, offer a one-click browser reauth — it
-    /// re-mints tokens and clears the flag (works daemon-up or -down). Shows an
-    /// in-flight state while the browser sign-in runs.
+    /// AUTH-3: the account's login dropped (`auth_broken`). Instead of a dead-end
+    /// "run clauth login" hint, offer a one-click browser reauth — it re-mints
+    /// tokens and clears the flag (works daemon-up or -down). Shows an in-flight
+    /// state while the browser sign-in runs. TABS-1: a codex profile recovers via
+    /// the codex PKCE browser flow (`--codex --browser`); the context menu also
+    /// offers the instant re-capture path.
     private var reauthSurface: some View {
         let inFlight = model.reauthInFlight == p.name
+        let cli = p.isCodex ? "clauth login \(p.name) --codex --browser" : "clauth login \(p.name)"
         return VStack(spacing: 5) {
             HStack(spacing: 5) {
                 Image(systemName: "exclamationmark.shield.fill")
@@ -167,7 +173,7 @@ struct DetailCard: View {
                 Spacer(minLength: 4)
             }
             Button {
-                model.reauth(p.name)
+                model.reauth(p.name, codex: p.isCodex)
             } label: {
                 HStack {
                     Spacer()
@@ -183,7 +189,7 @@ struct DetailCard: View {
             }
             .buttonStyle(.plain)
             .disabled(model.reauthInFlight != nil)
-            .help("Re-authenticate \(p.name) with a browser sign-in (runs `clauth login \(p.name)`).")
+            .help("Re-authenticate \(p.name) with a browser sign-in (runs `\(cli)`).")
         }
     }
 
@@ -192,7 +198,10 @@ struct DetailCard: View {
         let (title, tint): (String, Color) = {
             switch model.switchPhase {
             case .arming(let t) where t == target:
-                return ("Confirm — live session on \(model.active?.name ?? "current")", Theme.danger)
+                // Harness-matched current active (TABS-1): only claude arms today
+                // (codex has no live-session signal), but the wording routes anyway.
+                let current = model.activeProfile(for: p.harnessKind)?.name ?? "current"
+                return ("Confirm — live session on \(current)", Theme.danger)
             case .pending(let t) where t == target:
                 return ("Switching to \(target)…", Theme.actVerb)
             default:
@@ -221,7 +230,12 @@ struct DetailCard: View {
         }
         .buttonStyle(.plain).disabled(disabled)
         .keyboardShortcut(.return, modifiers: .command)
-        .help("Rewrites the macOS Keychain credential — affects running claude sessions.")
+        // Name the real mechanism per harness (TABS-1). Codex must NOT claim it
+        // affects running codex sessions: `clauth start` codex sessions run
+        // isolated CODEX_HOMEs the shared-login rewrite can't strand.
+        .help(p.isCodex
+              ? "Rewrites ~/.codex/auth.json at the session boundary — isolated codex sessions (clauth start) are unaffected."
+              : "Rewrites the macOS Keychain credential — affects running claude sessions.")
     }
 
     private func disabledVerb(_ title: String) -> some View {

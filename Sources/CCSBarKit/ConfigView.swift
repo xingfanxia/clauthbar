@@ -12,8 +12,14 @@ import SwiftUI
 struct ConfigView: View {
     @ObservedObject var model: StatusModel
     let status: DaemonStatus
+    /// Which harness's chain this editor edits (TABS-1). Rows and the chain are
+    /// filtered to it; the weekly line + wrap-off radio render for `.claude` only —
+    /// codex has no wrap-off, and the weekly knob (shared daemon-side) is edited
+    /// from the Claude page so ONE surface owns it.
+    var harness: Harness = .claude
 
     private let rowHeight: CGFloat = 28
+    private var chain: [String] { status.chain(for: harness) }
 
     var body: some View {
         DisclosureGroup(isExpanded: $model.showConfig) {
@@ -39,12 +45,14 @@ struct ConfigView: View {
                         row(for: p)
                     }
                     legends
-                    Divider().padding(.vertical, 4)
-                    weeklyRow
-                    Divider().padding(.vertical, 4)
-                    wrapOffRadio
+                    if harness == .claude {
+                        Divider().padding(.vertical, 4)
+                        weeklyRow
+                        Divider().padding(.vertical, 4)
+                        wrapOffRadio
+                    }
                 }
-                .animation(.easeInOut(duration: 0.2), value: status.fallbackChain)
+                .animation(.easeInOut(duration: 0.2), value: chain)
                 .disabled(!reachable)
                 .opacity(reachable ? 1 : 0.45)
             }
@@ -62,9 +70,10 @@ struct ConfigView: View {
         .tint(Theme.accent)
     }
 
-    /// Chain members first (in chain order), then non-members — see `ChainEdit`.
+    /// This harness's profiles: chain members first (in chain order), then
+    /// non-members — see `ChainEdit`.
     private var orderedConfigProfiles: [ProfileStatus] {
-        ChainEdit.chainOrdered(status.profiles, chain: status.fallbackChain)
+        ChainEdit.chainOrdered(status.profiles.filter { $0.harnessKind == harness }, chain: chain)
     }
 
     // MARK: - Per-account row (28pt hit-target standard)
@@ -90,7 +99,7 @@ struct ConfigView: View {
 
                 lastResortToggle(p, on: fb.lastResort)
                 moveButton(p, up: true, disabled: fb.position <= 1)
-                moveButton(p, up: false, disabled: fb.position >= status.fallbackChain.count)
+                moveButton(p, up: false, disabled: fb.position >= chain.count)
                 glyphButton("minus.circle", tint: Theme.danger, help: "Remove from chain") {
                     model.requestRemove(p.name)
                 }

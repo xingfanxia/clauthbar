@@ -27,6 +27,18 @@ bars, the **detail card** for the inspected account, and the **chain rail**
 showing the ordered fallback. Three states it has a loud, fixed home for —
 each shown in both dark and light:
 
+Since TABS-1 the panel opens with a **provider tab bar** (Overview / Claude /
+Codex, codexbar-style — each harness tab carries a small usage underline for its
+active account's 5h burn). **Overview** is a cross-harness glance: one card per
+agent with the active login's identity, tier, and 5h/7d bars. The **Claude** page
+is the full panel above; the **Codex** page brings codex account management to
+parity — switch (confirmed against the codex active slot), refresh, rename,
+re-authenticate (browser PKCE) or **re-capture** the login codex currently
+holds, plus the codex fallback chain with its own rail and editor. Adding a
+codex account offers both doors: *Capture current login* (instant — copies
+`~/.codex/auth.json` via `clauth login <name> --codex --new`) and *Sign in…*
+(browser PKCE, `--codex --browser --new`).
+
 | | Healthy | Login dropped | Window spent |
 |---|---|---|---|
 | **Dark** | ![healthy dark](docs/media/panel-healthy-dark.png) | ![reauth dark](docs/media/panel-reauth-dark.png) | ![spent dark](docs/media/panel-spent-dark.png) |

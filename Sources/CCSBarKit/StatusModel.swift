@@ -29,6 +29,20 @@ final class StatusModel: ObservableObject {
 
     @Published private(set) var status: DaemonStatus?
     @Published private(set) var liveness: Liveness = .down
+    /// The selected provider page (TABS-1). Persisted manually through UserDefaults
+    /// — NOT @AppStorage, which is a SwiftUI DynamicProperty and never publishes
+    /// from inside an ObservableObject (the panel would silently stop re-rendering
+    /// on tab taps). Changing tabs resets inspection: it's per-page view state.
+    @Published var tab: ProviderTab {
+        didSet {
+            // Inspection is per-page view state — always reset on a page change
+            // (didSet doesn't fire for the init assignment, so injected preview
+            // inspection survives). Persistence is real-app only.
+            if oldValue != tab { inspectedName = nil }
+            guard !isPreview else { return }
+            UserDefaults.standard.set(tab.rawValue, forKey: ProviderTab.persistenceKey)
+        }
+    }
     /// A transient, human-readable error from the last command (TECH-11) — a daemon
     /// rejection or an unreachable daemon. Rendered as a banner; auto-cleared after
     /// a few seconds and on the next successful command ('errors must be loud').
@@ -61,13 +75,20 @@ final class StatusModel: ObservableObject {
     /// the disclosure shows an honest "Applying…" while > 0. Cleared as each
     /// command's reply lands (the settle ladder then updates the view).
     @Published var configInFlight = 0
-    /// The account whose browser login (`clauth login`) is in flight, or nil. Drives
-    /// the "Opening browser to sign in…" state and blocks a second concurrent login —
-    /// SHARED by the reauth flow AND the add-account flow (one sign-in at a time).
-    @Published var reauthInFlight: String?
-    /// Whether the inline "Add account…" editor is open (a name field + Sign in).
-    /// Set by the ACCOUNTS-list "Add account…" row, cleared on submit/cancel.
-    @Published var addingAccount = false
+    /// The login currently in flight (`clauth login …`), or nil. Mode-aware (TABS-1):
+    /// a browser sign-in shows "finish in your browser…" while a codex CAPTURE — an
+    /// instant, no-browser copy of the live codex login — must not claim a browser is
+    /// involved. SHARED by reauth AND add-account (one login at a time, all flows).
+    @Published var loginInFlight: LoginFlight?
+    /// The in-flight login's profile name — the pre-TABS-1 surface every gate and
+    /// test reads; kept as an alias so "is a login running" checks stay one idiom.
+    var reauthInFlight: String? { loginInFlight?.name }
+    /// Which harness the open inline "Add account…" editor targets, or nil when
+    /// closed (TABS-1: each harness page has its own add row; the codex editor
+    /// offers capture + browser, the claude editor browser only).
+    @Published var addingHarness: Harness?
+    /// Whether the inline add editor is open (pre-TABS-1 alias over `addingHarness`).
+    var addingAccount: Bool { addingHarness != nil }
     /// The machine-wide token snapshot (TOK-4) from `~/.clauth/tokens.json`, or nil
     /// when the file is missing / a newer schema / corrupt. Read inside the existing
     /// poll (no second timer); a nil hides the strip but NEVER blanks the panel.
@@ -84,8 +105,10 @@ final class StatusModel: ObservableObject {
     /// The clauth version this ccsbar build targets. A daemon reporting a
     /// different `clauth_version` raises a SOFT skew badge (informational — the
     /// schema gate in TECH-4 handles hard read-format incompatibility). Bump this
-    /// when ccsbar is validated against a new clauth release.
-    static let expectedClauthVersion = "0.7.4"
+    /// when ccsbar is validated against a new clauth release. Bumped WITH the
+    /// fixture's `clauth_version` (they must move together or every snapshot grows
+    /// a spurious skew badge).
+    static let expectedClauthVersion = "0.11.0"
 
     private var timer: Timer?
     private var lastMtime: Date?
@@ -103,6 +126,11 @@ final class StatusModel: ObservableObject {
     /// anchor for `SwitchMachine.shouldExtendPending`'s hard ceiling.
     var pendingSince: Date?
     var switchDismissTask: Task<Void, Never>?
+    /// The harness of the in-flight switch target (TABS-1): the confirm ladder
+    /// observes THIS harness's active slot, and the lifecycle row renders on the
+    /// matching strip only (no cross-tab bleed). Set by `switchTo` before the
+    /// phase publishes; meaningless while `.idle`.
+    var switchHarness: Harness = .claude
     private var rotationClearTask: Task<Void, Never>?
 
     // Notification baseline (TECH-11) — set on the first observed status so the
@@ -117,6 +145,8 @@ final class StatusModel: ObservableObject {
 
     init() {
         isPreview = false
+        tab = UserDefaults.standard.string(forKey: ProviderTab.persistenceKey)
+            .flatMap(ProviderTab.init(rawValue:)) ?? .overview
         Notifier.requestAuthorizationIfNeeded()
         reload()
         timer = Timer.scheduledTimer(withTimeInterval: 4, repeats: true) { [weak self] _ in
@@ -127,12 +157,15 @@ final class StatusModel: ObservableObject {
         timer?.tolerance = 1.0
     }
 
-    /// Preview/snapshot init: inject a fixed status + liveness (+ optional inspection
-    /// and switch phase for the canonical-state snapshots), no polling.
+    /// Preview/snapshot init: inject a fixed status + liveness (+ optional inspection,
+    /// switch phase, and PAGE for the canonical-state snapshots), no polling, no
+    /// UserDefaults traffic. `tab` defaults to `.claude` so every pre-TABS-1 snapshot
+    /// variant keeps rendering the page it was designed around.
     init(preview: DaemonStatus?, liveness: Liveness = .ok,
          inspected: String? = nil, phase: SwitchMachine.Phase = .idle,
-         tokens: MachineTokens? = nil) {
+         tokens: MachineTokens? = nil, tab: ProviderTab = .claude) {
         self.isPreview = true
+        self.tab = tab
         self.status = preview
         self.liveness = liveness
         self.inspectedName = inspected
@@ -272,6 +305,18 @@ final class StatusModel: ObservableObject {
     /// and the inspection ring move, so the eye keeps its place.
     var listProfiles: [ProfileStatus] { status?.profiles ?? [] }
 
+    /// Harness-scoped account lists (TABS-1) — each provider page lists only its
+    /// own harness's profiles, in the same stable file order.
+    func profiles(for harness: Harness) -> [ProfileStatus] {
+        listProfiles.filter { $0.harnessKind == harness }
+    }
+
+    /// The harness's active slot as a full profile (TABS-1): `activeClaude` /
+    /// `activeCodex` behind one switchable accessor for the tab bar + strips.
+    func activeProfile(for harness: Harness) -> ProfileStatus? {
+        harness == .codex ? activeCodex : activeClaude
+    }
+
     // MARK: - Inspection (CBAR4-4 — browse freely, switch deliberately)
 
     /// The account the detail card is showing. `nil` ⇒ follow the active account.
@@ -279,19 +324,24 @@ final class StatusModel: ObservableObject {
     /// panel resets inspection to the active account.
     @Published var inspectedName: String?
 
-    /// The inspected profile — the explicit selection, else the active account, else
-    /// the first CHAIN member (design §3.1: reset to active, or the chain head when
-    /// active_profile is null, e.g. wrap-off), else the first row.
+    /// The inspected profile — the explicit selection, else the CURRENT PAGE's
+    /// active account, else that harness's first CHAIN member (design §3.1: reset
+    /// to active, or the chain head when the active slot is null, e.g. wrap-off),
+    /// else the page's first row. Tab-aware since TABS-1: the Codex page's detail
+    /// card must never default to a claude profile it doesn't list (Overview keeps
+    /// the claude resolution — it has no detail card, but the menu-bar machinery
+    /// still reads claude truth through here-adjacent paths).
     var inspected: ProfileStatus? {
         if let name = inspectedName, let p = status?.profiles.first(where: { $0.name == name }) {
             return p
         }
-        if let active { return active }
-        if let s = status, let head = s.fallbackChain.first,
+        let harness = tab.harness ?? .claude
+        if let slot = activeProfile(for: harness) { return slot }
+        if let s = status, let head = s.chain(for: harness).first,
            let p = s.profiles.first(where: { $0.name == head }) {
             return p
         }
-        return status?.profiles.first
+        return profiles(for: harness).first
     }
 
     func inspect(_ name: String) { inspectedName = name }
@@ -419,14 +469,21 @@ final class StatusModel: ObservableObject {
     /// chain · last resort — parks here when nothing else has headroom". nil for a
     /// non-chain account. Keyed on the explicit `last_resort` flag (clauth
     /// set_last_resort), NOT threshold-100 — the two are independent now.
+    ///
+    /// TABS-1: the ordinal comes from `fallback.position`, which the daemon computes
+    /// against the profile's OWN harness's chain — so codex members get real
+    /// ordinals too. `position` is 1-BASED on the wire (status_json.rs emits
+    /// `pos + 1`), so it feeds `ordinal` directly, NO `+ 1`. The "would rotate to"
+    /// forecast clause stays claude-only: the daemon publishes no codex forecast,
+    /// and a client-side mirror is the drift the published forecast exists to kill.
     func chainLine(for p: ProfileStatus) -> String? {
-        guard let s = status, let idx = s.fallbackChain.firstIndex(of: p.name) else { return nil }
-        let ordinal = Self.ordinal(idx + 1)
-        let threshold = p.fallback?.threshold ?? 95
-        if p.fallback?.lastResort == true {
+        guard let fb = p.fallback else { return nil }
+        let ordinal = Self.ordinal(fb.position)
+        let threshold = fb.threshold
+        if fb.lastResort {
             return "\(ordinal) in chain · last resort — parks here when nothing else has headroom"
         }
-        if p.active, case .switchTo(let target) = forecast {
+        if p.active, !p.isCodex, case .switchTo(let target) = forecast {
             return "\(ordinal) in chain · watched now — would rotate to \(target) at \(Int(threshold))% of the 5h window"
         }
         return "\(ordinal) in chain · leaves at \(Int(threshold))% of the 5h window"

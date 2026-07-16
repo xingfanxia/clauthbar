@@ -20,10 +20,11 @@ final class DaemonStatusTests: XCTestCase {
         XCTAssertEqual(status.schema, 1)
         // Neutral demo profiles for public README media (see Fixtures header): three
         // anthropic accounts, account-3 marked last_resort so the flag badge shows,
-        // plus one codex profile (INT-2) demonstrating the two-active-slots case.
+        // plus two codex profiles (INT-2/TABS-1): the two-active-slots case AND a
+        // 2-member codex chain so the codex rail renders with a rotation target.
         XCTAssertEqual(status.activeProfile, "account-1")
         XCTAssertEqual(status.fallbackChain, ["account-1", "account-2", "account-3"])
-        XCTAssertEqual(status.profiles.count, 4)
+        XCTAssertEqual(status.profiles.count, 5)
         XCTAssertTrue(status.profiles.filter { !$0.isCodex }.allSatisfy { $0.provider == "anthropic" },
                       "claude-slot fixture profiles stay brand-free (all anthropic)")
         // Current daemon output (clauth 81c00a2+): published forecast + burn_aware.
@@ -44,7 +45,7 @@ final class DaemonStatusTests: XCTestCase {
         XCTAssertNil(status.profiles.first { $0.name == "account-3" }?.accountEmail)
         // INT-2 codex slot: top-level pointers + the codex profile's per-profile fields.
         XCTAssertEqual(status.activeCodexProfile, "codex-1")
-        XCTAssertEqual(status.codexFallbackChain, ["codex-1"])
+        XCTAssertEqual(status.codexFallbackChain, ["codex-1", "codex-2"])
         let codex = try XCTUnwrap(status.profiles.first { $0.name == "codex-1" })
         XCTAssertTrue(codex.isCodex)
         XCTAssertEqual(codex.harness, "codex")
@@ -53,6 +54,14 @@ final class DaemonStatusTests: XCTestCase {
         XCTAssertTrue(codex.active, "codex slot is active independently of the claude slot")
         XCTAssertEqual(codex.codexSnapshotAt, "2026-07-03T12:00:00+00:00")
         XCTAssertNil(codex.codexRateLimitReached)
+        // TABS-1: chain members carry a real fallback block for THEIR harness's
+        // chain (the daemon emits one per member; position is 1-based).
+        XCTAssertEqual(codex.fallback?.position, 1)
+        XCTAssertEqual(status.profiles.first { $0.name == "codex-2" }?.fallback?.position, 2)
+        XCTAssertEqual(codex.harnessKind, .codex)
+        XCTAssertEqual(status.activeName(for: .codex), "codex-1")
+        XCTAssertEqual(status.activeName(for: .claude), "account-1")
+        XCTAssertEqual(status.chain(for: .codex), ["codex-1", "codex-2"])
         // A claude profile has no harness key → nil, isCodex false (default slot).
         let account1 = try XCTUnwrap(status.profiles.first { $0.name == "account-1" })
         XCTAssertNil(account1.harness)

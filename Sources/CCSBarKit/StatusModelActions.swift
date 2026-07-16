@@ -1,22 +1,47 @@
 import SwiftUI
 
+/// How a `clauth login` spawn acquires the credential (TABS-1). The distinction is
+/// user-facing: a browser flow needs the user to go finish a sign-in, a capture is
+/// an instant no-browser copy of the login codex already holds — the in-flight
+/// banner must not send the user hunting for a browser window that never opened.
+enum LoginMode: Equatable, Sendable {
+    /// Browser OAuth/PKCE sign-in (claude always; codex `--codex --browser`).
+    case browser
+    /// Codex-only: capture the live `~/.codex/auth.json` verbatim (`--codex`).
+    case capture
+}
+
+/// One in-flight `clauth login` spawn: which profile, acquired how. Single-flight
+/// across ALL login surfaces (reauth + both add flows) — one login at a time.
+struct LoginFlight: Equatable, Sendable {
+    let name: String
+    let mode: LoginMode
+}
+
 /// The command/action half of `StatusModel` (TABS-1 decomposition): config edits,
-/// refreshes, browser login (reauth + add-account), rename, chain removal, and the
+/// refreshes, login (reauth + add-account), rename, chain removal, and the
 /// run/handle/settle plumbing they share. Stored properties stay in the class
 /// declaration; this file is same-type extensions only.
 extension StatusModel {
     // Each config command carries a predicate for its ACTUAL effect so the settle
     // ladder stops re-reading only once the change has landed — not on the next
     // unrelated ~1s status write (which would drop detection onto the slow 4s poll).
+    // TABS-1: membership predicates check BOTH chains — the daemon routes a codex
+    // profile's edit into `codex_fallback_chain`, and chains never share a name, so
+    // the union is exact for either harness.
     func fallbackAdd(_ name: String) {
-        run({ DaemonClient.fallbackAdd(name) }, expecting: { $0.fallbackChain.contains(name) })
+        run({ DaemonClient.fallbackAdd(name) },
+            expecting: { $0.fallbackChain.contains(name) || $0.codexFallbackChain.contains(name) })
     }
     func fallbackRemove(_ name: String) {
-        run({ DaemonClient.fallbackRemove(name) }, expecting: { !$0.fallbackChain.contains(name) })
+        run({ DaemonClient.fallbackRemove(name) },
+            expecting: { !$0.fallbackChain.contains(name) && !$0.codexFallbackChain.contains(name) })
     }
     func fallbackMove(_ name: String, up: Bool) {
         let baseline = status?.fallbackChain ?? []
-        run({ DaemonClient.fallbackMove(name, up: up) }, expecting: { $0.fallbackChain != baseline })
+        let codexBaseline = status?.codexFallbackChain ?? []
+        run({ DaemonClient.fallbackMove(name, up: up) },
+            expecting: { $0.fallbackChain != baseline || $0.codexFallbackChain != codexBaseline })
     }
     func setThreshold(_ name: String, _ value: Int) {
         run({ DaemonClient.setThreshold(name, value) },
@@ -76,25 +101,31 @@ extension StatusModel {
     /// Force a usage re-fetch for one account (context-menu "Refresh <name>", §7).
     func refresh(_ name: String) { run({ DaemonClient.refresh(name) }, shimmer: false) }
 
-    /// Re-authenticate a dropped account (AUTH-3) through the self-contained browser
-    /// OAuth flow. Spawns `clauth login <name>` OFF the main actor — it blocks until
-    /// the browser sign-in finishes — while the detail card shows an in-flight state.
-    /// On success the CLI cleared `auth_broken` and wrote fresh tokens, so we nudge a
-    /// refresh to surface it without waiting for the next poll. Only one login runs at
-    /// a time. `run` is injected so the outcome routing is testable without spawning.
+    /// Re-authenticate a dropped account (AUTH-3) through `clauth login`. Spawns OFF
+    /// the main actor — a browser flow blocks until the sign-in finishes — while the
+    /// detail card shows an in-flight state. On success the CLI cleared `auth_broken`
+    /// and wrote fresh tokens, so we nudge a refresh to surface it without waiting
+    /// for the next poll. Only one login runs at a time. TABS-1: `codex` + `mode`
+    /// pick the CLI shape — claude is always a browser OAuth; a codex profile can be
+    /// re-signed-in via browser PKCE (`--codex --browser`) or re-captured from the
+    /// live `~/.codex/auth.json` (`--codex`, instant). `run` is injected so the
+    /// outcome routing is testable without spawning.
     func reauth(
         _ name: String,
-        run: @escaping @Sendable (String) async -> CommandOutcome = { await DaemonClient.login($0) }
+        codex: Bool = false,
+        mode: LoginMode = .browser,
+        run: (@Sendable (String) async -> CommandOutcome)? = nil
     ) {
-        guard reauthInFlight == nil else { return } // one browser login at a time
-        reauthInFlight = name
+        guard loginInFlight == nil else { return } // one login at a time
+        let runner = run ?? { await DaemonClient.login($0, codex: codex, browser: mode == .browser) }
+        loginInFlight = LoginFlight(name: name, mode: codex ? mode : .browser)
         lastCommandError = nil
         errorClearTask?.cancel()
         Task { [weak self] in
-            let outcome = await run(name)
+            let outcome = await runner(name)
             guard let self else { return }
-            self.reauthInFlight = nil
-            if let message = Self.loginFailureMessage(outcome, name: name) {
+            self.loginInFlight = nil
+            if let message = Self.loginFailureMessage(outcome, name: name, codex: codex, mode: mode) {
                 self.showError(message)
             } else if self.daemonReachable {
                 // The CLI already cleared auth_broken + wrote fresh tokens; nudge a
@@ -106,12 +137,13 @@ extension StatusModel {
         }
     }
 
-    // MARK: - Add a brand-new account ("Add account…" → inline banner → browser login)
+    // MARK: - Add a brand-new account ("Add account…" → inline banner → login)
 
-    /// Open the inline add-account editor (a name field + Sign in).
-    func beginAddAccount() { addingAccount = true }
+    /// Open the inline add-account editor for a harness (a name field + the
+    /// harness's sign-in verbs — claude: browser; codex: capture OR browser).
+    func beginAddAccount(_ harness: Harness = .claude) { addingHarness = harness }
     /// Dismiss the inline add-account editor without signing in.
-    func cancelAddAccount() { addingAccount = false }
+    func cancelAddAccount() { addingHarness = nil }
 
     /// Sign in a BRAND-NEW account through the same self-contained browser OAuth flow
     /// as reauth. Since clauth v0.8.0 `clauth login <name>` CREATES the profile when
@@ -128,31 +160,35 @@ extension StatusModel {
     /// injected so outcome routing is testable without spawning `clauth login`.
     func addAccount(
         _ name: String,
-        run: @escaping @Sendable (String) async -> CommandOutcome = {
-            await DaemonClient.login($0, newOnly: true)
-        }
+        codex: Bool = false,
+        mode: LoginMode = .browser,
+        run: (@Sendable (String) async -> CommandOutcome)? = nil
     ) {
-        guard reauthInFlight == nil else { return } // one browser login at a time
+        guard loginInFlight == nil else { return } // one login at a time
         let trimmed = name.trimmingCharacters(in: .whitespaces)
         // Fast client-side feedback — the banner already disables Sign-in on an
         // invalid name; this re-check catches programmatic callers. The AUTHORITATIVE
         // collision guard is `--new` in the spawn below (`DaemonClient.login`):
         // this snapshot-based check is a TOCTOU against clauth's real config, so a
         // duplicate that slips past it gets a loud non-zero exit, never a silent
-        // reauth of someone else's account.
+        // reauth of someone else's account. Names are GLOBAL across harnesses in
+        // clauth config, so the collision check spans both lists.
         if let error = AddAccountValidation.error(trimmed, existing: listProfiles.map(\.name)) {
             showError(error)
             return
         }
-        addingAccount = false
-        reauthInFlight = trimmed
+        let runner = run ?? {
+            await DaemonClient.login($0, newOnly: true, codex: codex, browser: mode == .browser)
+        }
+        addingHarness = nil
+        loginInFlight = LoginFlight(name: trimmed, mode: codex ? mode : .browser)
         lastCommandError = nil
         errorClearTask?.cancel()
         Task { [weak self] in
-            let outcome = await run(trimmed)
+            let outcome = await runner(trimmed)
             guard let self else { return }
-            self.reauthInFlight = nil
-            if let message = Self.loginFailureMessage(outcome, name: trimmed) {
+            self.loginInFlight = nil
+            if let message = Self.loginFailureMessage(outcome, name: trimmed, codex: codex, mode: mode) {
                 self.showError(message)
                 return
             }
@@ -167,18 +203,28 @@ extension StatusModel {
         }
     }
 
-    /// The user-facing error for a browser-login outcome (reauth OR add-account), or
-    /// nil on success. ONE source of truth for both flows — the CLI verb (`clauth
-    /// login`) is identical — including the "run it in a terminal" fallback hint. Pure
-    /// so the copy is unit-tested without spawning `clauth login`.
-    nonisolated static func loginFailureMessage(_ outcome: CommandOutcome, name: String) -> String? {
+    /// The user-facing error for a login outcome (reauth OR add-account), or nil on
+    /// success. ONE source of truth for all flows, including the "run it in a
+    /// terminal" fallback hint — which must name the exact CLI shape that failed
+    /// (`--codex [--browser]` for codex), and a codex CAPTURE failure must not read
+    /// as a browser sign-in problem. Pure so the copy is unit-tested without
+    /// spawning `clauth login`.
+    nonisolated static func loginFailureMessage(
+        _ outcome: CommandOutcome, name: String, codex: Bool = false, mode: LoginMode = .browser
+    ) -> String? {
+        let cli = "clauth login \(name)"
+            + (codex ? " --codex" : "")
+            + (codex && mode == .browser ? " --browser" : "")
         switch outcome {
         case .ok:
             return nil
         case .daemonError(_, let message):
-            return "Sign-in didn't complete (\(message)). Try again, or run `clauth login \(name)` in a terminal."
+            if codex && mode == .capture {
+                return "Couldn't capture the codex login (\(message)). Is codex signed in? Or run `\(cli)` in a terminal."
+            }
+            return "Sign-in didn't complete (\(message)). Try again, or run `\(cli)` in a terminal."
         case .unreachable:
-            return "Couldn't find the clauth binary. Run `clauth login \(name)` in a terminal."
+            return "Couldn't find the clauth binary. Run `\(cli)` in a terminal."
         }
     }
 

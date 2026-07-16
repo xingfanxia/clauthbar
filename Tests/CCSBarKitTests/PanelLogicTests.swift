@@ -41,8 +41,8 @@ final class PanelLogicTests: XCTestCase {
         {"schema":1,"generated_at":"2099-01-01T00:00:00+00:00","active_profile":"xfx",
          "wrap_off":false,"refresh_interval_ms":90000,"fallback_chain":["xfx","cl-ax"],
          "profiles":[
-           {"name":"xfx","active":true,"fallback":{"position":0,"threshold":95,"armed":true},\(live5h.replacingOccurrences(of: "%%", with: "62"))},
-           {"name":"cl-ax","active":false,"fallback":{"position":1,"threshold":95,"armed":false,"last_resort":true},\(live5h.replacingOccurrences(of: "%%", with: "10"))}
+           {"name":"xfx","active":true,"fallback":{"position":1,"threshold":95,"armed":true},\(live5h.replacingOccurrences(of: "%%", with: "62"))},
+           {"name":"cl-ax","active":false,"fallback":{"position":2,"threshold":95,"armed":false,"last_resort":true},\(live5h.replacingOccurrences(of: "%%", with: "10"))}
          ]}
         """)
         let model = StatusModel(preview: s)

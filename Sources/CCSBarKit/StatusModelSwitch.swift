@@ -7,11 +7,21 @@ import SwiftUI
 extension StatusModel {
     /// Begin a switch. Feeds the state machine a request; the effects (arm timer,
     /// off-main dispatch, status.json observation, timeouts) follow the phase in
-    /// `enter(_:)`.
+    /// `enter(_:)`. Harness-aware (TABS-1): the target's own harness decides which
+    /// active slot the confirm ladder observes and which strip shows the lifecycle.
     func switchTo(_ name: String) {
+        // Resolve the target's harness. An unknown name (shouldn't happen from the
+        // UI — rows come from listProfiles) defaults to claude and lets the daemon's
+        // authoritative rejection surface loudly, never a silent local drop.
+        switchHarness = listProfiles.first { $0.name == name }?.harnessKind ?? .claude
         // Guard the CURRENT account's live session (design §3.7): if it has one, a
         // Keychain rewrite would strand it, so the machine arms for a confirm.
-        let live = active?.hasLiveSession ?? false
+        // CLAUDE ONLY: status.json's has_live_session is computed by the claude-only
+        // session counter (always false for codex), and `clauth start` codex
+        // sessions run isolated CODEX_HOMEs a switch of the shared ~/.codex login
+        // can't strand — there is nothing for a codex confirm to protect, so a
+        // codex switch goes straight to pending.
+        let live = switchHarness == .claude && (activeClaude?.hasLiveSession ?? false)
         dispatch(.requestSwitch(target: name, currentHasLiveSession: live))
     }
 
@@ -72,7 +82,10 @@ extension StatusModel {
         pendingTimeoutTask?.cancel()
         pendingTimeoutTask = after(seconds) { model in
             model.reload()
-            model.dispatch(.observedActive(model.status?.activeProfile))
+            // Observe the TARGET harness's active slot (TABS-1): a codex switch
+            // lands in active_codex_profile — watching active_profile would never
+            // confirm it and false-fail every codex switch at the timeout.
+            model.dispatch(.observedActive(model.status?.activeName(for: model.switchHarness)))
             guard case .pending = model.switchPhase else { return } // confirmed above
             let elapsed = Date().timeIntervalSince(model.pendingSince ?? .distantPast)
             if SwitchMachine.shouldExtendPending(
@@ -110,7 +123,9 @@ extension StatusModel {
                 try? await Task.sleep(for: .seconds(sleep))
                 guard let self, !Task.isCancelled else { return }
                 self.reload()
-                self.dispatch(.observedActive(self.status?.activeProfile))
+                // Same harness routing as the deadline check: read the slot the
+                // target actually lands in.
+                self.dispatch(.observedActive(self.status?.activeName(for: self.switchHarness)))
                 if case .pending = self.switchPhase {} else { return }
             }
         }

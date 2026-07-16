@@ -123,6 +123,23 @@ enum Snapshot {
         return (status, name)
     }
 
+    /// Re-serialize the fixture with every codex-harness profile stripped (and the
+    /// codex slot/chain nulled) — the TABS-1 first-run case: the Codex tab's
+    /// empty-state door is what a fresh install actually shows, so it gets its own
+    /// verifiable render.
+    private static func fixtureWithoutCodex(from data: Data) -> DaemonStatus? {
+        guard var dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let profiles = dict["profiles"] as? [[String: Any]] else {
+            FileHandle.standardError.write(Data("snapshot[codex-empty]: fixture parse failed\n".utf8))
+            return nil
+        }
+        dict["profiles"] = profiles.filter { ($0["harness"] as? String) != "codex" }
+        dict["active_codex_profile"] = NSNull()
+        dict["codex_fallback_chain"] = [String]()
+        guard let stripped = try? JSONSerialization.data(withJSONObject: dict) else { return nil }
+        return try? JSONDecoder().decode(DaemonStatus.self, from: stripped)
+    }
+
     /// Re-serialize the fixture with the first non-active profile's `auth_status`
     /// pinned to `"broken"` — the AUTH-3 dropped-login case. Returns (status, name)
     /// so the caller inspects exactly the broken row, whose detail card then shows the
@@ -213,29 +230,37 @@ enum Snapshot {
         let broken = fixtureAuthBroken(from: data, active: false)
         let brokenActive = fixtureAuthBroken(from: data, active: true)
 
-        // (status, liveness, inspected, phase) per variant.
-        let (status, liveness, inspected, phase): (DaemonStatus?, StatusModel.Liveness, String?, SwitchMachine.Phase) = {
+        // (status, liveness, inspected, phase, tab) per variant. Legacy variants pin
+        // `.claude` (the pre-TABS-1 panel body) so their renders stay comparable;
+        // the `tab-*` variants exercise the new pages.
+        let (status, liveness, inspected, phase, tab): (DaemonStatus?, StatusModel.Liveness, String?, SwitchMachine.Phase, ProviderTab) = {
             switch variant {
-            case "inspecting": return (mock, .ok, nonActive, .idle)
-            case "tokens": return (mock, .ok, nil, .idle)
-            case "config": return (mock, .ok, nil, .idle)
-            case "remove-confirm": return (mock, .ok, nil, .idle)
-            case "no-fable": return (fixtureWithoutFable(from: data) ?? mock, .ok, nil, .idle)
-            case "spent": return (exhausted?.0 ?? mock, .ok, exhausted?.1 ?? nonActive, .idle)
-            case "rename": return (mock, .ok, nonActive, .idle)
-            case "reauth": return (broken?.0 ?? mock, .ok, broken?.1 ?? nonActive, .idle)
+            case "inspecting": return (mock, .ok, nonActive, .idle, .claude)
+            case "tokens": return (mock, .ok, nil, .idle, .claude)
+            case "config": return (mock, .ok, nil, .idle, .claude)
+            case "remove-confirm": return (mock, .ok, nil, .idle, .claude)
+            case "no-fable": return (fixtureWithoutFable(from: data) ?? mock, .ok, nil, .idle, .claude)
+            case "spent": return (exhausted?.0 ?? mock, .ok, exhausted?.1 ?? nonActive, .idle, .claude)
+            case "rename": return (mock, .ok, nonActive, .idle, .claude)
+            case "reauth": return (broken?.0 ?? mock, .ok, broken?.1 ?? nonActive, .idle, .claude)
             // The ACTIVE account is the one broken — inspect it to prove the detail card
             // shows the reauth verb (not the "Active account" readout) for an active drop.
-            case "reauth-active": return (brokenActive?.0 ?? mock, .ok, brokenActive?.1 ?? nonActive, .idle)
-            case "mid-switch": return (mock, .ok, nonActive, .pending(target: nonActive))
-            case "daemon-dead", "dead", "stale": return (mock, .stalled(since: "05:00"), nil, .idle)
-            case "schema2": return (nil, .outOfDate(schema: 2), nil, .idle)
-            case "skew": return (fixtureWithVersion("9.9.9", from: data) ?? mock, .ok, nil, .idle)
+            case "reauth-active": return (brokenActive?.0 ?? mock, .ok, brokenActive?.1 ?? nonActive, .idle, .claude)
+            case "mid-switch": return (mock, .ok, nonActive, .pending(target: nonActive), .claude)
+            case "daemon-dead", "dead", "stale": return (mock, .stalled(since: "05:00"), nil, .idle, .claude)
+            case "schema2": return (nil, .outOfDate(schema: 2), nil, .idle, .claude)
+            case "skew": return (fixtureWithVersion("9.9.9", from: data) ?? mock, .ok, nil, .idle, .claude)
+            // TABS-1 pages: the cross-harness glance, the codex management page
+            // (inspection nil → resolves to the ACTIVE CODEX account), and the
+            // first-run Codex empty-state door.
+            case "tab-overview": return (mock, .ok, nil, .idle, .overview)
+            case "tab-codex": return (mock, .ok, nil, .idle, .codex)
+            case "codex-empty": return (fixtureWithoutCodex(from: data) ?? mock, .ok, nil, .idle, .codex)
             // default / healthy: inspected=nil resolves to the ACTIVE account (the real
             // first-open path — StatusModel.inspected falls back to active), so this
             // renders the one card that carries the "pick another account above to
             // switch" hint without pinning a name.
-            default: return (mock, .ok, nil, .idle)
+            default: return (mock, .ok, nil, .idle, .claude)
             }
         }()
         let resolved: String
@@ -245,7 +270,9 @@ enum Snapshot {
         case .outOfDate(let n): resolved = "outOfDate(schema: \(n))"
         case .down: resolved = "down"
         }
-        let model = StatusModel(preview: status, liveness: liveness, inspected: inspected, phase: phase, tokens: tokens)
+        let model = StatusModel(
+            preview: status, liveness: liveness, inspected: inspected, phase: phase,
+            tokens: tokens, tab: tab)
         if variant == "config" { model.showConfig = true }
         // Panel-level armed-member removal confirm (§7): arm it on the first armed
         // chain member so the banner renders.
@@ -257,7 +284,7 @@ enum Snapshot {
         let phaseNote = phase == .idle ? "" : " phase=\(phase)"
         let inspectNote = inspected.map { " inspected=\($0)" } ?? ""
         FileHandle.standardError.write(
-            Data("snapshot[\(variant)]: liveness=\(resolved)\(inspectNote)\(phaseNote)\(skewNote)\n".utf8))
+            Data("snapshot[\(variant)]: liveness=\(resolved) tab=\(tab.rawValue)\(inspectNote)\(phaseNote)\(skewNote)\n".utf8))
 
         let renderer = ImageRenderer(content: panelSurface(model: model, appearance: appearance))
         renderer.scale = scale
