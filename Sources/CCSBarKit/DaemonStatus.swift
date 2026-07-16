@@ -51,6 +51,17 @@ struct DaemonStatus: Codable, Sendable {
     /// in BOTH walk directions (clauth `weekly_switch_threshold`, default 98).
     /// Additive; `nil` on older daemons → treat as 98 (`ChainEdit.defaultWeeklyLine`).
     let weeklySwitchThreshold: Double?
+    /// The codex active slot's profile name (INT-2) — independent of `activeProfile`
+    /// (the claude slot). A codex profile and a claude profile can BOTH be active at
+    /// once (per-slot truth), so this is a SECOND active pointer, not a replacement.
+    /// `nil` on codex-less installs or older daemons.
+    let activeCodexProfile: String?
+    /// The codex auto-switch chain (INT-2) — same shape as `fallbackChain` but for the
+    /// codex slot. Empty on codex-less installs / older daemons. Codex profiles are
+    /// NEVER in `fallbackChain`; they live here only. DEFERRED: decoded for contract
+    /// conformance, but the codex chain-rail visual editor is not built yet — no panel
+    /// surface reads this field.
+    let codexFallbackChain: [String]
 
     enum CodingKeys: String, CodingKey {
         case schema
@@ -67,6 +78,8 @@ struct DaemonStatus: Codable, Sendable {
         case forecast
         case burnAware = "burn_aware"
         case weeklySwitchThreshold = "weekly_switch_threshold"
+        case activeCodexProfile = "active_codex_profile"
+        case codexFallbackChain = "codex_fallback_chain"
     }
 
     /// Decode additively — every field the daemon added after schema 1 is
@@ -87,6 +100,8 @@ struct DaemonStatus: Codable, Sendable {
         forecast = try c.decodeIfPresent(DaemonForecast.self, forKey: .forecast)
         burnAware = try c.decodeIfPresent(Bool.self, forKey: .burnAware)
         weeklySwitchThreshold = try c.decodeIfPresent(Double.self, forKey: .weeklySwitchThreshold)
+        activeCodexProfile = try c.decodeIfPresent(String.self, forKey: .activeCodexProfile)
+        codexFallbackChain = try c.decodeIfPresent([String].self, forKey: .codexFallbackChain) ?? []
     }
 }
 
@@ -151,9 +166,21 @@ struct ProfileStatus: Codable, Sendable, Identifiable {
     /// double-poll incident was invisible precisely because nothing displayed
     /// WHICH account each profile held.
     let accountEmail: String?
+    /// INT-2: which harness this profile belongs to — `"codex"` for a codex profile,
+    /// else `"claude"`/absent (default). Distinguishes the two independent active
+    /// slots so two simultaneously-`active` rows read as two slots, not a bug.
+    let harness: String?
+    /// INT-2 (codex-only): when the stored codex login was last captured/adopted
+    /// (ISO-8601). A CREDENTIAL age — distinct from usage freshness (`fetchedAt`) and
+    /// window resets. `nil` for claude profiles / older daemons.
+    let codexSnapshotAt: String?
+    /// INT-2 (codex-only): codex's OWN limiter verdict on the last request —
+    /// `"primary"` (5h window) or `"secondary"` (7d window) rejected it. `nil` when
+    /// not rate-limited, for claude profiles, or older daemons.
+    let codexRateLimitReached: String?
 
     enum CodingKeys: String, CodingKey {
-        case name, active, provider, tier, fallback, windows
+        case name, active, provider, tier, fallback, windows, harness
         case authStatus = "auth_status"
         case accountEmail = "account_email"
         case baseUrl = "base_url"
@@ -164,6 +191,8 @@ struct ProfileStatus: Codable, Sendable, Identifiable {
         case autoStart = "auto_start"
         case bellThreshold = "bell_threshold"
         case thirdParty = "third_party"
+        case codexSnapshotAt = "codex_snapshot_at"
+        case codexRateLimitReached = "codex_rate_limit_reached"
     }
 
     /// Lenient decode (TECH-4): only `name` + `active` are load-bearing; every
@@ -187,6 +216,9 @@ struct ProfileStatus: Codable, Sendable, Identifiable {
         thirdParty = try c.decodeIfPresent(ThirdPartyInfo.self, forKey: .thirdParty)
         authStatus = try c.decodeIfPresent(String.self, forKey: .authStatus)
         accountEmail = try c.decodeIfPresent(String.self, forKey: .accountEmail)
+        harness = try c.decodeIfPresent(String.self, forKey: .harness)
+        codexSnapshotAt = try c.decodeIfPresent(String.self, forKey: .codexSnapshotAt)
+        codexRateLimitReached = try c.decodeIfPresent(String.self, forKey: .codexRateLimitReached)
     }
 
     /// The window with the given label (`"5h"`, `"7d"`, `"7d fable"`), or nil.
@@ -207,6 +239,10 @@ struct ProfileStatus: Codable, Sendable, Identifiable {
     var fableWeek: UsageWindow? {
         windows.first { $0.label.hasPrefix("7d ") && $0.label.lowercased().contains("fable") }
     }
+
+    /// INT-2: a codex-harness profile (the codex active slot's truth). A codex row
+    /// and a claude row can both be `active` at once — this tells them apart.
+    var isCodex: Bool { harness == "codex" }
 
     /// Is this profile a member of the fallback chain?
     var inChain: Bool { fallback != nil }

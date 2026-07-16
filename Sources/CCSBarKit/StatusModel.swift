@@ -237,9 +237,26 @@ final class StatusModel: ObservableObject {
         if let err = s.lastError, err.at != lastNotifiedErrorAt {
             Notifier.post(title: "clauth auto-switch issue", body: err.message)
         }
+        // INT-2: codex-slot rotation (active_codex_profile changing) is deliberately
+        // NOT notified for now — the daemon has no codex-specific last_switch trigger
+        // to distinguish a user tap from an auto-switch, so we'd risk a spurious
+        // "switched" toast on every codex adopt. Add a lastNotifiedActiveCodex baseline
+        // here when the codex slot gets its own switch-provenance field.
     }
 
-    var active: ProfileStatus? { status?.profiles.first { $0.active } }
+    /// The active CLAUDE profile (INT-2). Since codex arrived, `active` is ambiguous —
+    /// a codex profile and a claude profile can BOTH be `active` (two independent
+    /// slots). This is the claude slot specifically.
+    var activeClaude: ProfileStatus? { status?.profiles.first { $0.active && !$0.isCodex } }
+
+    /// The active CODEX profile (INT-2), or nil on codex-less installs. The codex
+    /// slot's truth, independent of the claude slot above.
+    var activeCodex: ProfileStatus? { status?.profiles.first { $0.active && $0.isCodex } }
+
+    /// The active account for every EXISTING consumer (forecast, chain line, switch
+    /// confirm, menu-bar %) — all claude-rotation machinery, so `active` points at the
+    /// claude slot to preserve behavior. Codex-slot readers use `activeCodex`.
+    var active: ProfileStatus? { activeClaude }
 
     /// Accounts in STABLE FILE ORDER — the CBAR-4 list never reorders (design §2:
     /// "rows never reorder; the terracotta ✓ badge moves"). Only the active badge

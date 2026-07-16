@@ -30,7 +30,11 @@ struct AccountRow: View {
                     .padding(.leading, 18)
                     .padding(.top, -3)
             }
-            if p.provider != "anthropic" {
+            // Codex profiles publish `provider == "openai"` but carry the same
+            // {5h,7d} window array as claude (INT-2), so they take the %-bar path,
+            // not the third-party availability line. Only genuine api-key providers
+            // (no %-windows) get thirdPartyLine.
+            if p.provider != "anthropic" && !p.isCodex {
                 thirdPartyLine
             } else {
                 fiveHourRow
@@ -77,6 +81,17 @@ struct AccountRow: View {
                 Text(tier).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
             } else if p.provider != "anthropic" {
                 Text(providerLabel).font(.subheadline).foregroundStyle(.secondary)
+            }
+            // INT-2: a small "codex" harness tag so a user seeing TWO checkmarked rows
+            // (one claude-active, one codex-active) reads them as two independent slots,
+            // not a duplicate-active bug. Mirrors the tier/provider caption's altitude.
+            if p.isCodex {
+                Text("codex")
+                    .font(.system(size: 10)).fontWeight(.medium)
+                    .padding(.vertical, 1).padding(.horizontal, 5)
+                    .background(Color.primary.opacity(0.08), in: Capsule())
+                    .foregroundStyle(.secondary)
+                    .fixedSize()
             }
             Spacer(minLength: 4)
             // The badges keep their intrinsic width (higher layout priority); a long
@@ -237,6 +252,9 @@ struct AccountRow: View {
 
     private var voiceOver: String {
         var parts = [p.name]
+        // INT-2: name the harness so assistive tech hears the two-slots distinction
+        // the visual "codex" tag conveys.
+        if p.isCodex { parts.append("codex") }
         if p.active { parts.append("active account") }
         if let tier = p.tier { parts.append(tier) }
         // Parity with the hover tooltip: WHICH account this profile holds is
@@ -245,7 +263,11 @@ struct AccountRow: View {
         // Order mirrors the visual badge cluster: spent pill, then the watching chip.
         if let tag = rowSpentTag { parts.append("\(tag) — hit a usage limit") }
         if p.fallback?.armed == true { parts.append("armed, watching") }
-        if p.provider == "anthropic" { parts.append("session \(Int(p.fiveHourPct.rounded())) percent used") }
+        // Codex rows carry the same 5h window as claude (INT-2), so they read the
+        // session-usage percent too.
+        if p.provider == "anthropic" || p.isCodex {
+            parts.append("session \(Int(p.fiveHourPct.rounded())) percent used")
+        }
         return parts.joined(separator: ", ")
     }
 }

@@ -23,7 +23,10 @@ struct DetailCard: View {
                     .truncationMode(.middle)
                     .textSelection(.enabled)
             }
-            if p.provider == "anthropic" {
+            // Codex profiles (provider "openai") carry the same {5h,7d} window array as
+            // claude (INT-2), so they take the window path, not the third-party
+            // availability card — mirrors AccountRow's gate.
+            if p.provider == "anthropic" || p.isCodex {
                 windows
             } else {
                 thirdPartyDetail

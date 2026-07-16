@@ -51,8 +51,11 @@ enum MenuBarLabelLadder {
         if let s = status, s.activeProfile == nil {
             return Spec(symbol: "powersleep", text: "off")
         }
-        // (5) NO status.json — bare gauge, nothing to report.
-        guard let s = status, let active = s.profiles.first(where: { $0.active }) else {
+        // (5) NO status.json — bare gauge, nothing to report. INT-2: the menu-bar %
+        // is the claude slot's — a codex profile can ALSO be `active` (independent
+        // slot), so skip codex here so the label can't flip to the codex account
+        // depending on daemon array order. (A dedicated codex rung is deferred.)
+        guard let s = status, let active = s.profiles.first(where: { $0.active && !$0.isCodex }) else {
             return Spec(symbol: gauge, text: "")
         }
 
@@ -87,7 +90,9 @@ enum MenuBarLabelLadder {
 
     /// The active account name, tail-truncated to the label's 12-char budget.
     private static func name(_ s: DaemonStatus) -> String {
-        truncated(s.activeProfile ?? s.profiles.first(where: { $0.active })?.name ?? "")
+        // `active_profile` is the claude slot; the fallback skips codex profiles so it
+        // resolves the same claude account (INT-2 — codex is an independent slot).
+        truncated(s.activeProfile ?? s.profiles.first(where: { $0.active && !$0.isCodex })?.name ?? "")
     }
 
     private static func truncated(_ s: String) -> String {

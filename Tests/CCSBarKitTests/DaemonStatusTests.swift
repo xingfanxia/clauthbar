@@ -19,12 +19,13 @@ final class DaemonStatusTests: XCTestCase {
         let status = try JSONDecoder().decode(DaemonStatus.self, from: data)
         XCTAssertEqual(status.schema, 1)
         // Neutral demo profiles for public README media (see Fixtures header): three
-        // anthropic accounts, account-3 marked last_resort so the flag badge shows.
+        // anthropic accounts, account-3 marked last_resort so the flag badge shows,
+        // plus one codex profile (INT-2) demonstrating the two-active-slots case.
         XCTAssertEqual(status.activeProfile, "account-1")
         XCTAssertEqual(status.fallbackChain, ["account-1", "account-2", "account-3"])
-        XCTAssertEqual(status.profiles.count, 3)
-        XCTAssertTrue(status.profiles.allSatisfy { $0.provider == "anthropic" },
-                      "public media fixture stays brand-free (all anthropic)")
+        XCTAssertEqual(status.profiles.count, 4)
+        XCTAssertTrue(status.profiles.filter { !$0.isCodex }.allSatisfy { $0.provider == "anthropic" },
+                      "claude-slot fixture profiles stay brand-free (all anthropic)")
         // Current daemon output (clauth 81c00a2+): published forecast + burn_aware.
         XCTAssertEqual(status.forecast?.action, "switch")
         XCTAssertEqual(status.forecast?.to, "account-2")
@@ -41,6 +42,24 @@ final class DaemonStatusTests: XCTestCase {
             "alpha@example.com"
         )
         XCTAssertNil(status.profiles.first { $0.name == "account-3" }?.accountEmail)
+        // INT-2 codex slot: top-level pointers + the codex profile's per-profile fields.
+        XCTAssertEqual(status.activeCodexProfile, "codex-1")
+        XCTAssertEqual(status.codexFallbackChain, ["codex-1"])
+        let codex = try XCTUnwrap(status.profiles.first { $0.name == "codex-1" })
+        XCTAssertTrue(codex.isCodex)
+        XCTAssertEqual(codex.harness, "codex")
+        XCTAssertEqual(codex.provider, "openai")
+        XCTAssertEqual(codex.tier, "pro")
+        XCTAssertTrue(codex.active, "codex slot is active independently of the claude slot")
+        XCTAssertEqual(codex.codexSnapshotAt, "2026-07-03T12:00:00+00:00")
+        XCTAssertNil(codex.codexRateLimitReached)
+        // A claude profile has no harness key → nil, isCodex false (default slot).
+        let account1 = try XCTUnwrap(status.profiles.first { $0.name == "account-1" })
+        XCTAssertNil(account1.harness)
+        XCTAssertFalse(account1.isCodex)
+        XCTAssertNil(account1.codexSnapshotAt)
+        // Both slots can be active at once — that is the contract, not a bug.
+        XCTAssertTrue(account1.active)
     }
 
     // MARK: Additive forecast fields (clauth 81c00a2) — present AND absent decode.
@@ -77,6 +96,57 @@ final class DaemonStatusTests: XCTestCase {
         XCTAssertNil(status.forecast)
         XCTAssertNil(status.burnAware)
         XCTAssertEqual(status.profiles.first?.fallback?.lastResort, false)
+    }
+
+    // MARK: Additive codex fields (INT-2) — present AND absent-on-old-daemon decode.
+
+    func testCodexFieldsDecodeWhenPresent() throws {
+        // A codex-aware daemon: top-level active_codex_profile + codex_fallback_chain,
+        // and a codex profile carrying harness/codex_snapshot_at/codex_rate_limit_reached.
+        // The claude profile stays active simultaneously (two independent slots).
+        let status = try decode(#"""
+        {"schema":1,"generated_at":"2026-07-04T05:00:00+00:00","active_profile":"cl",
+         "wrap_off":false,"refresh_interval_ms":90000,
+         "fallback_chain":["cl"],"active_codex_profile":"cx","codex_fallback_chain":["cx"],
+         "profiles":[
+           {"name":"cl","active":true,"provider":"anthropic",
+            "windows":[{"label":"5h","utilization_pct":30}]},
+           {"name":"cx","active":true,"provider":"openai","harness":"codex","tier":"pro",
+            "codex_snapshot_at":"2026-07-03T12:00:00+00:00","codex_rate_limit_reached":"primary",
+            "windows":[{"label":"5h","utilization_pct":55},{"label":"7d","utilization_pct":40}]}]}
+        """#)
+        XCTAssertEqual(status.activeCodexProfile, "cx")
+        XCTAssertEqual(status.codexFallbackChain, ["cx"])
+        let cl = try XCTUnwrap(status.profiles.first { $0.name == "cl" })
+        XCTAssertFalse(cl.isCodex)
+        XCTAssertNil(cl.harness)
+        let cx = try XCTUnwrap(status.profiles.first { $0.name == "cx" })
+        XCTAssertTrue(cx.isCodex)
+        XCTAssertEqual(cx.harness, "codex")
+        XCTAssertEqual(cx.codexSnapshotAt, "2026-07-03T12:00:00+00:00")
+        XCTAssertEqual(cx.codexRateLimitReached, "primary")
+        // Both slots active at once — the contract.
+        XCTAssertTrue(cl.active)
+        XCTAssertTrue(cx.active)
+    }
+
+    func testCodexFieldsAbsentDecodeBackCompat() throws {
+        // An OLDER (codex-less) daemon: no top-level codex pointers, no per-profile
+        // harness. active_codex_profile is nil, codex_fallback_chain empty, and every
+        // profile reads as a non-codex (claude) slot — never a decode failure.
+        let status = try decode(#"""
+        {"schema":1,"generated_at":"2026-07-04T05:00:00+00:00","active_profile":"a",
+         "wrap_off":false,"refresh_interval_ms":90000,"fallback_chain":["a"],
+         "profiles":[{"name":"a","active":true,
+            "fallback":{"position":1,"threshold":95,"armed":true}}]}
+        """#)
+        XCTAssertNil(status.activeCodexProfile)
+        XCTAssertEqual(status.codexFallbackChain, [])
+        let p = try XCTUnwrap(status.profiles.first)
+        XCTAssertNil(p.harness)
+        XCTAssertFalse(p.isCodex)
+        XCTAssertNil(p.codexSnapshotAt)
+        XCTAssertNil(p.codexRateLimitReached)
     }
 
     func testForecastOffAndNoneMapToOutcomes() throws {

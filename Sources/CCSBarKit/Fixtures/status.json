@@ -122,6 +122,36 @@
         }
       ],
       "third_party": null
+    },
+    {
+      "name": "codex-1",
+      "active": true,
+      "provider": "openai",
+      "harness": "codex",
+      "base_url": null,
+      "tier": "pro",
+      "has_live_session": false,
+      "fetch_status": "Fresh",
+      "fetched_at": "2026-07-04T04:59:00+00:00",
+      "next_refresh_at": null,
+      "auto_start": false,
+      "bell_threshold": null,
+      "codex_snapshot_at": "2026-07-03T12:00:00+00:00",
+      "codex_rate_limit_reached": null,
+      "windows": [
+        {
+          "label": "5h",
+          "utilization_pct": 55,
+          "resets_at": "2026-07-04T21:00:00.000000+00:00"
+        },
+        {
+          "label": "7d",
+          "utilization_pct": 40,
+          "resets_at": "2026-07-10T00:00:00.000000+00:00"
+        }
+      ],
+      "third_party": null,
+      "account_email": "codex@example.com"
     }
   ],
   "clauth_version": "0.7.4",
@@ -138,5 +168,9 @@
     "trigger": "scheduler"
   },
   "last_error": null,
-  "weekly_switch_threshold": 98.0
+  "weekly_switch_threshold": 98.0,
+  "active_codex_profile": "codex-1",
+  "codex_fallback_chain": [
+    "codex-1"
+  ]
 }
