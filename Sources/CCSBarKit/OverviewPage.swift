@@ -67,8 +67,9 @@ private struct HarnessCard: View {
 
     private var header: some View {
         HStack(spacing: 6) {
-            // Provider identity hue (TABS-1.1): terracotta claude, royal blue codex.
-            Image(systemName: tab.symbol).font(.system(size: 12))
+            // The provider's BRAND glyph (TABS-1.2, from codexbar's icon set),
+            // tinted with the harness identity hue.
+            ProviderGlyphView(tab: tab, size: 13)
                 .foregroundStyle(tab.tint ?? Theme.accent)
             Text(tab.title).font(.body).fontWeight(.semibold)
             if let tier = active?.tier {

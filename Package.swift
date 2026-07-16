@@ -15,6 +15,12 @@ let package = Package(
             resources: [
                 .copy("Fixtures/status.json"),
                 .copy("Fixtures/tokens.json"),
+                // Provider brand glyphs (from steipete/CodexBar, MIT — see
+                // Resources/ICONS-ATTRIBUTION.md). Unlike the dev-only fixtures,
+                // these DO ship: package_app.sh copies them into the .app's
+                // Contents/Resources; ProviderGlyph loads Bundle.main first.
+                .copy("Resources/ProviderIcon-codex.svg"),
+                .copy("Resources/ProviderIcon-claude.svg"),
             ]
         ),
         // The thin executable: just `@main` → `runCCSBar()`.

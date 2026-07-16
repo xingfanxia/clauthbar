@@ -31,6 +31,11 @@ mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp ".build/release/ccsbar" "$app/Contents/MacOS/ccsbar"
 cp "Scripts/Info.plist" "$app/Contents/Info.plist"
 
+# Provider brand glyphs (TABS-1.2) ship as loose Resources files —
+# ProviderGlyph loads them via Bundle.main. Deliberately NOT the whole SPM
+# resource bundle: the fixtures in it are dev-only and must not ship.
+cp Sources/CCSBarKit/Resources/ProviderIcon-*.svg "$app/Contents/Resources/"
+
 # Ad-hoc signature so Gatekeeper lets a locally-built app run.
 codesign --force --sign - "$app"
 

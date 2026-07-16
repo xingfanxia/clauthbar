@@ -44,17 +44,11 @@ enum ProviderTab: String, CaseIterable, Sendable {
         }
     }
 
-    /// The SELECTED tab's solid pill fill (codexbar's style: a filled pill with
-    /// a white label). Codex blue is AA under white directly; claude uses the
-    /// darkened `actVerb` (white on raw terracotta is under 4.5:1); Overview has
-    /// no identity hue → neutral wash with a primary label instead of a fill.
-    var pillFill: Color? {
-        switch self {
-        case .overview: return nil
-        case .claude: return Theme.actVerb
-        case .codex: return Theme.codex
-        }
-    }
+    /// The SELECTED tab's solid pill fill — codexbar-exact: EVERY selected
+    /// segment fills with the system accent color under a white label
+    /// (`NSColor.controlAccentColor` in codexbar's SwitcherViews); provider
+    /// identity lives in the brand GLYPH, not a per-provider pill color.
+    var pillFill: Color { Color(nsColor: .controlAccentColor) }
 
     /// UserDefaults key for the persisted selection (read/written by StatusModel —
     /// NOT @AppStorage: a DynamicProperty inside an ObservableObject never
@@ -88,7 +82,10 @@ struct ProviderTabBar: View {
         } label: {
             VStack(spacing: 3) {
                 HStack(spacing: 5) {
-                    Image(systemName: tab.symbol).font(.system(size: 11))
+                    // Brand glyphs for the harness tabs (template-tinted white
+                    // on the selected pill), SF grid for Overview — codexbar's
+                    // anatomy.
+                    ProviderGlyphView(tab: tab)
                     Text(tab.title).font(.subheadline).fontWeight(selected ? .semibold : .regular)
                 }
                 underline(for: tab, selected: selected)
@@ -127,21 +124,20 @@ struct ProviderTabBar: View {
     }
 }
 
-/// Selected = codexbar's solid identity pill (white label on the provider hue;
-/// Overview: neutral wash + primary label); unselected = secondary label with
-/// the panel's quiet hover treatment (AccountRow's 0.045 idiom).
+/// Selected = codexbar's solid system-accent pill with a white label;
+/// unselected = secondary label with the panel's quiet hover treatment
+/// (AccountRow's 0.045 idiom).
 private struct TabSegmentStyle: ButtonStyle {
     let selected: Bool
-    let pillFill: Color?
+    let pillFill: Color
     @State private var hovering = false
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .foregroundStyle(
-                selected ? (pillFill == nil ? Color.primary : .white) : Color.secondary)
+            .foregroundStyle(selected ? Color.white : Color.secondary)
             .background(
                 RoundedRectangle(cornerRadius: 7)
-                    .fill(selected ? (pillFill ?? Color.primary.opacity(0.12))
+                    .fill(selected ? pillFill
                           : (hovering ? Color.primary.opacity(0.045) : .clear))
             )
             .onHover { hovering = $0 }

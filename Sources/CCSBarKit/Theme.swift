@@ -16,13 +16,13 @@ enum Theme {
     /// #43ABE5 sapphire — ARMED / WATCHING / auto-switch identity (forecast bolt,
     /// armed chip ring, pending-switch pulse).
     static let sapphire = Color(.sRGB, red: 0.263, green: 0.671, blue: 0.898)
-    /// #0A60FF codex blue — the CODEX identity hue, pixel-sampled from
-    /// codexbar's own Codex tab (2026-07-16) so the two apps agree on the
-    /// provider color: codex tab pill, active marks, glance-card glyph, and
-    /// the codex ACT-verb fills (white on #0A60FF is 5.1:1 — AA without a
-    /// darkened variant, unlike terracotta which needs `actVerb`). Deliberately
-    /// deeper than sapphire so "codex identity" never reads as "armed".
-    static let codex = Color(.sRGB, red: 10.0 / 255, green: 96.0 / 255, blue: 1.0)
+    /// The codex identity hue = the macOS SYSTEM ACCENT color — what codexbar
+    /// actually uses for its selected provider pill (`NSColor.controlAccentColor`
+    /// in its SwitcherViews; the "codexbar blue" is just the default blue accent).
+    /// Codex active marks, verb fills, and the selected-tab pill all follow it,
+    /// so ccsbar and codexbar render the identical hue on the same machine and
+    /// both track the user's System Settings accent.
+    static let codex = Color(nsColor: .controlAccentColor)
 
     // HEADROOM/HEALTH as light/dark DYNAMIC pairs (Catppuccin Latte in light,
     // Mocha in dark) — fixes the 1.3–2.3:1 light-mode contrast failures the flat

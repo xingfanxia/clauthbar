@@ -365,3 +365,19 @@ final class ProviderTabsTests: XCTestCase {
         XCTAssertNil(CodexStrip.rateLimitLine(cxa2, now: farFuture))
     }
 }
+
+// MARK: - Brand glyphs (TABS-1.2)
+
+extension ProviderTabsTests {
+    @MainActor
+    func testProviderGlyphsLoadForBothHarnesses() {
+        // The bundled brand SVGs must load as template images (tinted by the
+        // label color on the selected pill) — a missing resource would silently
+        // fall back to SF Symbols and drift from codexbar's look.
+        for harness in Harness.allCases {
+            let image = ProviderGlyph.image(for: harness)
+            XCTAssertNotNil(image, "\(harness) glyph missing from resources")
+            XCTAssertEqual(image?.isTemplate, true, "\(harness) glyph must template-tint")
+        }
+    }
+}
