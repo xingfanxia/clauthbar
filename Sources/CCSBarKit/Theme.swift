@@ -16,13 +16,15 @@ enum Theme {
     /// #43ABE5 sapphire — ARMED / WATCHING / auto-switch identity (forecast bolt,
     /// armed chip ring, pending-switch pulse).
     static let sapphire = Color(.sRGB, red: 0.263, green: 0.671, blue: 0.898)
-    /// The codex identity hue = the macOS SYSTEM ACCENT color — what codexbar
-    /// actually uses for its selected provider pill (`NSColor.controlAccentColor`
-    /// in its SwitcherViews; the "codexbar blue" is just the default blue accent).
-    /// Codex active marks, verb fills, and the selected-tab pill all follow it,
-    /// so ccsbar and codexbar render the identical hue on the same machine and
-    /// both track the user's System Settings accent.
-    static let codex = Color(nsColor: .controlAccentColor)
+    /// The codex identity hue = SwiftUI's dynamic system accent — what codexbar's
+    /// SwiftUI surfaces use for non-pill accents (`Color.accentColor` in its
+    /// panes). CRITICALLY this must stay a DYNAMIC color: a `Color(nsColor:
+    /// .controlAccentColor)` snapshot in a static froze the LIGHT-appearance
+    /// value (#0A60FF) into the dark panel — the dark-appearance accent is the
+    /// LIGHTER #0A84FF-family blue, which is the "pale blue" codexbar shows on
+    /// dark. `Color.accentColor` resolves per-environment, tracks the user's
+    /// System Settings accent, and adapts light/dark like codexbar's.
+    static let codex = Color.accentColor
 
     // HEADROOM/HEALTH as light/dark DYNAMIC pairs (Catppuccin Latte in light,
     // Mocha in dark) — fixes the 1.3–2.3:1 light-mode contrast failures the flat
