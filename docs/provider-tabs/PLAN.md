@@ -1,5 +1,10 @@
 # TABS-1 — Provider tab switch + codex management parity
 
+> **STATUS: SHIPPED 2026-07-16.** Plan-reviewed (4 judges + refute: 13 confirmed
+> findings folded in pre-build), implemented, adversarially code-reviewed (4
+> dimensions + refute: 4 confirmed + 6 LOW, all fixed; the switch-harness HIGH
+> re-verified CLEAN on every path). 199/199 tests green.
+
 **Objective (1 sentence):** Restructure the ccsbar panel into codexbar-style provider
 tabs (Overview / Claude / Codex) and bring codex account **management** to parity with
 claude — switch (with real confirmation), refresh, reauth, rename, add, and chain

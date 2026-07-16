@@ -16,6 +16,15 @@ enum LoginMode: Equatable, Sendable {
 struct LoginFlight: Equatable, Sendable {
     let name: String
     let mode: LoginMode
+
+    /// The in-flight banner copy — mode-aware, and PURE so the exact strings are
+    /// unit-tested: a capture (instant, no browser) must never send the user
+    /// hunting for a browser window that never opened.
+    var bannerText: String {
+        mode == .capture
+            ? "Capturing current codex login into \(name)…"
+            : "Signing in to \(name) — finish in your browser…"
+    }
 }
 
 /// The command/action half of `StatusModel` (TABS-1 decomposition): config edits,
@@ -30,12 +39,10 @@ extension StatusModel {
     // profile's edit into `codex_fallback_chain`, and chains never share a name, so
     // the union is exact for either harness.
     func fallbackAdd(_ name: String) {
-        run({ DaemonClient.fallbackAdd(name) },
-            expecting: { $0.fallbackChain.contains(name) || $0.codexFallbackChain.contains(name) })
+        run({ DaemonClient.fallbackAdd(name) }, expecting: { $0.inAnyChain(name) })
     }
     func fallbackRemove(_ name: String) {
-        run({ DaemonClient.fallbackRemove(name) },
-            expecting: { !$0.fallbackChain.contains(name) && !$0.codexFallbackChain.contains(name) })
+        run({ DaemonClient.fallbackRemove(name) }, expecting: { !$0.inAnyChain(name) })
     }
     func fallbackMove(_ name: String, up: Bool) {
         let baseline = status?.fallbackChain ?? []

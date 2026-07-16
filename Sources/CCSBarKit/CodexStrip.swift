@@ -69,15 +69,34 @@ struct CodexStrip: View {
     /// `codex_rate_limit_reached` is a TWO-window signal: `"primary"` = the 5h
     /// window rejected the last request, `"secondary"` = the weekly (7d) window.
     /// An unrecognized future value degrades to a generic line, never hides.
-    static func rateLimitLine(_ p: ProfileStatus) -> (message: String, resetsAt: String?)? {
+    ///
+    /// LAPSE CROSS-CHECK (the daemon contract, status_json.rs: "Readers cross-check
+    /// the named window's resets_at — a lapsed window clears the badge"): the
+    /// verdict is a STICKY cached value, only overwritten on the next usage event,
+    /// so after the named window's reset passes the daemon no longer considers the
+    /// account blocked (its `codex_limiter_blocked` gates on window liveness) while
+    /// the raw field still says "primary". Mirror that gate here — a recovered
+    /// account must not wear a red limit card the daemon would ignore. The
+    /// unrecognized case degrades the same way the daemon does: limited only while
+    /// EITHER window is still live. `now` is injected for deterministic tests.
+    static func rateLimitLine(
+        _ p: ProfileStatus, now: Date = Date()
+    ) -> (message: String, resetsAt: String?)? {
+        func live(_ w: UsageWindow?) -> Bool {
+            guard let iso = w?.resetsAt, let resets = Theme.parseISO(iso) else { return false }
+            return resets > now
+        }
         switch p.codexRateLimitReached {
         case nil:
             return nil
         case "primary":
+            guard live(p.fiveHour) else { return nil }
             return ("\(p.name) hit its 5h window", p.fiveHour?.resetsAt)
         case "secondary":
+            guard live(p.sevenDay) else { return nil }
             return ("\(p.name) hit its weekly window", p.sevenDay?.resetsAt)
         case .some:
+            guard live(p.fiveHour) || live(p.sevenDay) else { return nil }
             return ("\(p.name) is rate-limited", nil)
         }
     }

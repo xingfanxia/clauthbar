@@ -126,6 +126,13 @@ extension DaemonStatus {
     func chain(for harness: Harness) -> [String] {
         harness == .codex ? codexFallbackChain : fallbackChain
     }
+
+    /// Membership across BOTH harness chains — the settle-ladder predicate for
+    /// chain edits (the daemon routes an edit into the profile's own harness's
+    /// chain; names never overlap across the two, so the union is exact).
+    func inAnyChain(_ name: String) -> Bool {
+        fallbackChain.contains(name) || codexFallbackChain.contains(name)
+    }
 }
 
 extension ProfileStatus {

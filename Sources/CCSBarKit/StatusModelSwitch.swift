@@ -10,6 +10,15 @@ extension StatusModel {
     /// `enter(_:)`. Harness-aware (TABS-1): the target's own harness decides which
     /// active slot the confirm ladder observes and which strip shows the lifecycle.
     func switchTo(_ name: String) {
+        // NEVER touch switchHarness while a switch is PENDING: the machine ignores
+        // a mid-pending request (SwitchMachine invariant), but the harness slot is
+        // OUTSIDE the machine — clobbering it would point the in-flight confirm
+        // ladder at the wrong active slot and false-fail a switch that succeeded
+        // (and teleport the lifecycle row to the other page's strip). Mirror the
+        // machine's own guard here so harness and phase move together. From
+        // idle/arming/confirmed/failed a new request legitimately (re)starts the
+        // lifecycle, and the harness update below is then correct.
+        if case .pending = switchPhase { return }
         // Resolve the target's harness. An unknown name (shouldn't happen from the
         // UI — rows come from listProfiles) defaults to claude and lets the daemon's
         // authoritative rejection surface loudly, never a silent local drop.

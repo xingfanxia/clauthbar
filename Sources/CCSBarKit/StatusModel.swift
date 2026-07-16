@@ -35,10 +35,18 @@ final class StatusModel: ObservableObject {
     /// on tab taps). Changing tabs resets inspection: it's per-page view state.
     @Published var tab: ProviderTab {
         didSet {
-            // Inspection is per-page view state — always reset on a page change
-            // (didSet doesn't fire for the init assignment, so injected preview
-            // inspection survives). Persistence is real-app only.
-            if oldValue != tab { inspectedName = nil }
+            // Per-page view state resets on a page change (didSet doesn't fire for
+            // the init assignment, so injected preview state survives): inspection,
+            // the inline editors, and the removal confirm — a codex add banner or
+            // removal prompt floating over the Claude page would answer a question
+            // the visible page no longer asks. Persistence is real-app only.
+            if oldValue != tab {
+                inspectedName = nil
+                addingHarness = nil
+                renaming = nil
+                pendingRemoval = nil
+                thresholdEdit = nil
+            }
             guard !isPreview else { return }
             UserDefaults.standard.set(tab.rawValue, forKey: ProviderTab.persistenceKey)
         }

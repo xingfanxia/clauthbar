@@ -174,6 +174,108 @@ final class ProviderTabsTests: XCTestCase {
         XCTAssertNil(model.loginInFlight)
     }
 
+    @MainActor
+    func testPendingSwitchProtectsHarnessFromASecondRequest() throws {
+        // Review HIGH: a mid-pending switchTo must not clobber switchHarness — the
+        // in-flight confirm ladder reads it to pick which active slot to observe,
+        // so a clobber false-fails a switch that succeeded.
+        let model = StatusModel(preview: try twoHarnessStatus())
+        model.switchTo("cl-b")
+        XCTAssertEqual(model.switchHarness, .claude)
+        guard case .pending("cl-b") = model.switchPhase else {
+            return XCTFail("expected pending cl-b, got \(model.switchPhase)")
+        }
+        // Second request while pending: machine ignores it AND the harness slot
+        // must survive untouched.
+        model.switchTo("cx-b")
+        XCTAssertEqual(model.switchHarness, .claude, "mid-pending request must not clobber the harness")
+        guard case .pending("cl-b") = model.switchPhase else {
+            return XCTFail("pending switch must survive, got \(model.switchPhase)")
+        }
+        // The original claude switch still confirms off the claude slot.
+        model.dispatch(.observedActive("cl-b"))
+        guard case .confirmed = model.switchPhase else {
+            return XCTFail("original switch must still confirm, got \(model.switchPhase)")
+        }
+        model.dismissSwitch()
+    }
+
+    @MainActor
+    func testInspectedFallsBackToCodexChainHeadWhenNoActiveCodex() throws {
+        // The codex twin of PanelLogicTests' claude chain-head fallback: on the
+        // Codex tab with NO active codex slot, the detail card must default to the
+        // codex chain head — never a claude profile the page doesn't list.
+        let s = try JSONDecoder().decode(DaemonStatus.self, from: Data("""
+        {"schema":1,"generated_at":"2099-01-01T00:00:00+00:00","active_profile":"cl-a",
+         "wrap_off":false,"refresh_interval_ms":90000,"fallback_chain":["cl-a"],
+         "active_codex_profile":null,"codex_fallback_chain":["cx-b","cx-a"],
+         "profiles":[
+           {"name":"cl-a","active":true,"windows":[]},
+           {"name":"cx-a","active":false,"provider":"openai","harness":"codex","windows":[]},
+           {"name":"cx-b","active":false,"provider":"openai","harness":"codex","windows":[]}
+         ]}
+        """.utf8))
+        let model = StatusModel(preview: s, tab: .codex)
+        XCTAssertEqual(model.inspected?.name, "cx-b", "falls to the CODEX chain head")
+    }
+
+    @MainActor
+    func testTabChangeDismissesInlineEditorsAndConfirms() throws {
+        // Review LOW: a codex add banner / removal prompt floating over the Claude
+        // page answers a question the visible page no longer asks.
+        let model = StatusModel(preview: try twoHarnessStatus(), tab: .codex)
+        model.beginAddAccount(.codex)
+        model.renaming = "cx-a"
+        model.pendingRemoval = "cx-a"
+        model.thresholdEdit = .fiveHour("cx-a")
+        model.tab = .claude
+        XCTAssertNil(model.addingHarness)
+        XCTAssertNil(model.renaming)
+        XCTAssertNil(model.pendingRemoval)
+        XCTAssertNil(model.thresholdEdit)
+    }
+
+    // MARK: - Removal confirm is harness-scoped
+
+    func testRemovalConsequenceScopesOtherArmedToTheSameHarness() throws {
+        // Both harnesses have their sole armed member (claude cl-a, codex cx-a).
+        // Removing cx-a stops CODEX auto-switch — the claude armed member does
+        // nothing for the codex chain, so the copy must say "disables", not
+        // "continues on the others".
+        let s = try twoHarnessStatus()
+        XCTAssertEqual(ChainEdit.removalConsequence(of: "cx-a", in: s), .disablesAutoSwitch)
+        XCTAssertEqual(ChainEdit.removalConsequence(of: "cl-a", in: s), .disablesAutoSwitch)
+        // Unarmed members still remove freely.
+        XCTAssertNil(ChainEdit.removalConsequence(of: "cx-b", in: s))
+    }
+
+    // MARK: - Login banner copy (pure)
+
+    func testLoginFlightBannerCopyIsModeAware() {
+        XCTAssertEqual(LoginFlight(name: "cx", mode: .capture).bannerText,
+                       "Capturing current codex login into cx…")
+        XCTAssertEqual(LoginFlight(name: "a", mode: .browser).bannerText,
+                       "Signing in to a — finish in your browser…")
+    }
+
+    // MARK: - Reserved names (client mirror of clauth validate_profile_name)
+
+    func testReservedNamesAreRejectedCaseInsensitively() {
+        XCTAssertNotNil(AddAccountValidation.error("daemon", existing: []))
+        XCTAssertNotNil(AddAccountValidation.error("Proxy", existing: []))
+        XCTAssertNotNil(AddAccountValidation.error("MCP", existing: []))
+        XCTAssertNil(AddAccountValidation.error("daemon2", existing: []))
+    }
+
+    // MARK: - Chain-union membership (the settle-predicate seam)
+
+    func testInAnyChainSpansBothHarnessChains() throws {
+        let s = try twoHarnessStatus()
+        XCTAssertTrue(s.inAnyChain("cl-b"))
+        XCTAssertTrue(s.inAnyChain("cx-b"))
+        XCTAssertFalse(s.inAnyChain("nobody"))
+    }
+
     // MARK: - Codex strip rate-limit mapping (two-window signal)
 
     func testCodexRateLimitLineMapsBothWindows() throws {
@@ -198,5 +300,23 @@ final class ProviderTabsTests: XCTestCase {
         let s4 = try twoHarnessStatus()
         let cxa4 = try XCTUnwrap(s4.profiles.first { $0.name == "cx-a" })
         XCTAssertNil(CodexStrip.rateLimitLine(cxa4))
+    }
+
+    func testCodexRateLimitLineClearsWhenTheNamedWindowLapses() throws {
+        // The daemon contract: codex_rate_limit_reached is a STICKY cached verdict;
+        // readers cross-check the named window's resets_at — a lapsed window clears
+        // the badge (the daemon's own codex_limiter_blocked does exactly this). The
+        // fixture's windows reset in 2099; a `now` past that means the account
+        // recovered even though the raw field still says "primary".
+        let farFuture = Date(timeIntervalSince1970: 4_500_000_000) // ~2112
+        let s = try twoHarnessStatus(codexLimited: "primary")
+        let cxa = try XCTUnwrap(s.profiles.first { $0.name == "cx-a" })
+        XCTAssertNotNil(CodexStrip.rateLimitLine(cxa), "live window → card shows")
+        XCTAssertNil(CodexStrip.rateLimitLine(cxa, now: farFuture),
+                     "lapsed window → the badge clears, matching the daemon's verdict")
+        // The unrecognized degrade obeys the same gate (either window live).
+        let s2 = try twoHarnessStatus(codexLimited: "tertiary")
+        let cxa2 = try XCTUnwrap(s2.profiles.first { $0.name == "cx-a" })
+        XCTAssertNil(CodexStrip.rateLimitLine(cxa2, now: farFuture))
     }
 }

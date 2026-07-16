@@ -35,7 +35,10 @@ struct AccountContextMenu: View {
                 model.inspect(p.name)
                 model.switchTo(p.name)
             }
-            .disabled(p.authBroken)
+            // Disabled while ANY switch is in flight (matching DetailCard's gate):
+            // the machine ignores a mid-pending request, so an enabled item whose
+            // tap silently no-ops reads as broken.
+            .disabled(p.authBroken || model.switchInFlight)
         }
         Button("Refresh \(p.name)") { model.refresh(p.name) }
             .disabled(!model.daemonReachable)

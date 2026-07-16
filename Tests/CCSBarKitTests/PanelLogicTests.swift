@@ -49,6 +49,11 @@ final class PanelLogicTests: XCTestCase {
         XCTAssertEqual(model.forecastSentence, "Watching xfx — would switch to cl-ax at 95%")
 
         let xfx = s.profiles[0], clax = s.profiles[1]
+        // NOTE: for a contiguous claude chain, fb.position == chain index + 1, so
+        // these assertions can't distinguish the position-based ordinal from the
+        // old firstIndex+1 walk. The pin that actually catches that regression is
+        // ProviderTabsTests.testChainLineUsesHarnessScopedOrdinals (a codex member
+        // is absent from fallback_chain, so a firstIndex walk returns nil there).
         XCTAssertEqual(model.chainLine(for: xfx),
                        "1st in chain · watched now — would rotate to cl-ax at 95% of the 5h window")
         // cl-ax has threshold 95 (not 100) yet is the last resort — proving the flag

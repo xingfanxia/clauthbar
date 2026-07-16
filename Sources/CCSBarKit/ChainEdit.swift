@@ -137,7 +137,13 @@ enum ChainEdit {
     static func removalConsequence(of name: String, in status: DaemonStatus) -> RemovalConsequence? {
         guard let p = status.profiles.first(where: { $0.name == name }),
               p.fallback?.armed == true else { return nil }
-        let otherArmed = status.profiles.contains { $0.name != name && ($0.fallback?.armed ?? false) }
+        // Armed is per-harness daemon-side (each harness arms against ITS active
+        // slot), so the "auto-switch continues on the others" consequence is only
+        // true of SAME-harness armed members — a claude armed member does nothing
+        // for a codex chain whose sole armed member is being removed (TABS-1).
+        let otherArmed = status.profiles.contains {
+            $0.name != name && $0.harnessKind == p.harnessKind && ($0.fallback?.armed ?? false)
+        }
         return otherArmed ? .armedMember : .disablesAutoSwitch
     }
 }
@@ -159,10 +165,22 @@ enum ChainEdit {
 ///
 /// Pure over its inputs, so it's unit-tested without a daemon or a real login.
 enum AddAccountValidation {
+    /// clauth's RESERVED subcommand names (src/actions.rs) — `clauth <reserved>`
+    /// would run the subcommand instead of switching, so the CLI refuses them
+    /// case-insensitively. Mirrored here for instant inline feedback (the CLI
+    /// still enforces authoritatively on spawn).
+    static let reservedNames: Set<String> = [
+        "daemon", "status", "doctor", "which", "start", "login", "delete",
+        "fallback", "proxy", "resume", "run", "mcp", "__complete", "mcp-await-job",
+    ]
+
     /// The exact reason `name` is unusable, or nil when it's valid.
     static func error(_ name: String, existing: [String]) -> String? {
         let trimmed = name.trimmingCharacters(in: .whitespaces)
         if trimmed.isEmpty { return "Name can't be empty." }
+        if reservedNames.contains(trimmed.lowercased()) {
+            return "'\(trimmed)' is a clauth command name — pick another."
+        }
         // `is_ascii_alphanumeric()` in clauth — ASCII digits/letters only (NOT the
         // Unicode-wide `Character.isLetter`), plus the same five punctuation chars.
         let charsetOK = trimmed.allSatisfy { c in

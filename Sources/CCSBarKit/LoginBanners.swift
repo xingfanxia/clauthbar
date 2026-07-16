@@ -16,9 +16,7 @@ struct LoginFlightBanner: View {
     var body: some View {
         HStack(spacing: 8) {
             ProgressView().controlSize(.small)
-            Text(flight.mode == .capture
-                 ? "Capturing current codex login into \(flight.name)…"
-                 : "Signing in to \(flight.name) — finish in your browser…")
+            Text(flight.bannerText)
                 .font(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
