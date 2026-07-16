@@ -44,11 +44,18 @@ enum ProviderTab: String, CaseIterable, Sendable {
         }
     }
 
-    /// The SELECTED tab's solid pill fill — codexbar-exact: EVERY selected
-    /// segment fills with the system accent color under a white label
-    /// (`NSColor.controlAccentColor` in codexbar's SwitcherViews); provider
-    /// identity lives in the brand GLYPH, not a per-provider pill color.
-    var pillFill: Color { Color(nsColor: .controlAccentColor) }
+    /// The SELECTED tab's solid pill fill — PER-PROVIDER, from codexbar's brand
+    /// color map: codex #49A3B0, claude terracotta (the darkened `actVerb`
+    /// variant so the white label stays AA — white on raw terracotta is under
+    /// 4.5:1). Overview has no provider → neutral wash + primary label.
+    /// Only codex is blue; claude is orange — never the other way around.
+    var pillFill: Color? {
+        switch self {
+        case .overview: return nil
+        case .claude: return Theme.actVerb
+        case .codex: return Theme.codex
+        }
+    }
 
     /// UserDefaults key for the persisted selection (read/written by StatusModel —
     /// NOT @AppStorage: a DynamicProperty inside an ObservableObject never
@@ -124,20 +131,21 @@ struct ProviderTabBar: View {
     }
 }
 
-/// Selected = codexbar's solid system-accent pill with a white label;
-/// unselected = secondary label with the panel's quiet hover treatment
-/// (AccountRow's 0.045 idiom).
+/// Selected = a solid provider-brand pill with a white label (Overview:
+/// neutral wash + primary label); unselected = secondary label with the
+/// panel's quiet hover treatment (AccountRow's 0.045 idiom).
 private struct TabSegmentStyle: ButtonStyle {
     let selected: Bool
-    let pillFill: Color
+    let pillFill: Color?
     @State private var hovering = false
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .foregroundStyle(selected ? Color.white : Color.secondary)
+            .foregroundStyle(
+                selected ? (pillFill == nil ? Color.primary : .white) : Color.secondary)
             .background(
                 RoundedRectangle(cornerRadius: 7)
-                    .fill(selected ? pillFill
+                    .fill(selected ? (pillFill ?? Color.primary.opacity(0.12))
                           : (hovering ? Color.primary.opacity(0.045) : .clear))
             )
             .onHover { hovering = $0 }
