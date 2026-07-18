@@ -91,6 +91,9 @@ struct PanelView: View {
     @ViewBuilder
     private func codexPage(_ status: DaemonStatus, dead: Bool) -> some View {
         CodexStrip(model: model)
+        // PROXY-1: local-file/state row — independent of daemon liveness, so
+        // it renders (and works) even on a dead-daemon page.
+        CodexProxyRow().padding(.horizontal, 8)
         Divider().padding(.horizontal, 12)
         harnessBody(status, harness: .codex, dead: dead)
     }
