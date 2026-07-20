@@ -88,8 +88,11 @@ enum SessionToken {
         case .unstamped:
             return ("Long-lived token · no recorded expiry", .normal)
         case .expires(let ms):
+            // Gate expiry on the clock, not the truncated day count: integer
+            // division reads a token expired <24h ago as `days == 0`, which
+            // mislabeled it "~0d" instead of expired (same fix as clauth's).
             let days = (ms - nowMs) / 86_400_000
-            if days < 0 {
+            if nowMs >= ms {
                 return ("Long-lived token expired — re-mint: claude setup-token", .danger)
             }
             if days <= 30 {

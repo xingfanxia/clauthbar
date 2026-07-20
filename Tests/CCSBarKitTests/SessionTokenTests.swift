@@ -62,6 +62,12 @@ import Testing
         #expect(dead?.text.contains("re-mint: claude setup-token") == true)
         #expect(dead?.tone == .danger)
 
+        // Sub-day expiry: integer day-division reads this as days == 0, which
+        // once mislabeled it "~0d" — the gate is the clock, not the count.
+        let justDead = SessionToken.statusLine(.expires(msEpoch: now - 1), nowMs: now)
+        #expect(justDead?.text.contains("re-mint: claude setup-token") == true)
+        #expect(justDead?.tone == .danger)
+
         let unstamped = SessionToken.statusLine(.unstamped, nowMs: now)
         #expect(unstamped?.text.contains("no recorded expiry") == true)
         #expect(unstamped?.tone == .normal)
