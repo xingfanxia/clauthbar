@@ -88,6 +88,40 @@ import Testing
         #expect(unstamped?.tone == .normal)
     }
 
+    // CLA-FEED: a daemon-fed sidecar's hours-scale expiry is routine
+    // maintenance — calm countdown, never the mint's 30-day warning ramp;
+    // expired = the feeder is dead (DANGER); a mis-fill overrides the feed.
+    @Test func fedTokenRendersMaintenanceNotADyingMint() {
+        let now: Int64 = 1_700_000_000_000
+        let hour: Int64 = 3_600_000
+
+        let fed = SessionToken.statusLine(.expires(msEpoch: now + 7 * hour), nowMs: now, fed: true)
+        #expect(fed?.text == "Fed token · refreshes in ~7h")
+        #expect(fed?.tone == .normal)
+
+        let subHour = SessionToken.statusLine(.expires(msEpoch: now + hour / 2), nowMs: now, fed: true)
+        #expect(subHour?.text == "Fed token · refreshes in <1h")
+        #expect(subHour?.tone == .normal)
+
+        // A mint-shaped horizon under the feed flag: the static mint still
+        // serves until the feed supersedes it.
+        let mint = SessionToken.statusLine(.expires(msEpoch: now + 340 * 24 * hour), nowMs: now, fed: true)
+        #expect(mint?.text.contains("feed arms") == true)
+        #expect(mint?.tone == .normal)
+
+        let stalled = SessionToken.statusLine(.expires(msEpoch: now - hour), nowMs: now, fed: true)
+        #expect(stalled?.text.contains("Feed stalled") == true)
+        #expect(stalled?.tone == .danger)
+
+        let arming = SessionToken.statusLine(.none, nowMs: now, fed: true)
+        #expect(arming?.text.contains("arming on next rotation") == true)
+        #expect(arming?.tone == .warning)
+
+        let misfilled = SessionToken.statusLine(.misfilled, nowMs: now, fed: true)
+        #expect(misfilled?.tone == .danger)
+        #expect(misfilled?.text.contains("mis-filled") == true)
+    }
+
     @Test func spawnArgvPipesTokenViaStdinNeverArgv() {
         // `--yes` because a non-TTY spawn can never answer the replace-confirm;
         // the token itself must never appear in the argv (visible in `ps`).

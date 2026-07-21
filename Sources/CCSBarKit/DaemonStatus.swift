@@ -213,6 +213,11 @@ struct ProfileStatus: Codable, Sendable, Identifiable {
     /// `"primary"` (5h window) or `"secondary"` (7d window) rejected it. `nil` when
     /// not rate-limited, for claude profiles, or older daemons.
     let codexRateLimitReached: String?
+    /// CLA-FEED: the daemon re-stamps this profile's session-token sidecar
+    /// from the usage chain on every rotation — its hours-scale expiry is
+    /// routine maintenance while true, a dying credential while false. Keys
+    /// the token line's fed rendering; absent on older daemons (= false).
+    let sessionFeed: Bool
 
     enum CodingKeys: String, CodingKey {
         case name, active, provider, tier, fallback, windows, harness
@@ -228,6 +233,7 @@ struct ProfileStatus: Codable, Sendable, Identifiable {
         case thirdParty = "third_party"
         case codexSnapshotAt = "codex_snapshot_at"
         case codexRateLimitReached = "codex_rate_limit_reached"
+        case sessionFeed = "session_feed"
     }
 
     /// Lenient decode (TECH-4): only `name` + `active` are load-bearing; every
@@ -254,6 +260,7 @@ struct ProfileStatus: Codable, Sendable, Identifiable {
         harness = try c.decodeIfPresent(String.self, forKey: .harness)
         codexSnapshotAt = try c.decodeIfPresent(String.self, forKey: .codexSnapshotAt)
         codexRateLimitReached = try c.decodeIfPresent(String.self, forKey: .codexRateLimitReached)
+        sessionFeed = try c.decodeIfPresent(Bool.self, forKey: .sessionFeed) ?? false
     }
 
     /// The window with the given label (`"5h"`, `"7d"`, `"7d fable"`), or nil.

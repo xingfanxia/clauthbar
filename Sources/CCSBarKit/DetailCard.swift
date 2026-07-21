@@ -26,11 +26,14 @@ struct DetailCard: View {
             // CLA-SPLIT: sessions on this account run on a static setup-token
             // mint — surface it and its ~1yr horizon (WARNING inside 30 days,
             // DANGER + re-mint hint once expired). Read from the sidecar per
-            // render; nothing shows for profiles without one.
+            // render; nothing shows for profiles without one. CLA-FEED: a
+            // feed-enabled profile (status.json `session_feed`) renders its
+            // hours-scale countdown as calm maintenance instead.
             if p.provider == "anthropic",
                let line = SessionToken.statusLine(
                    SessionToken.state(profile: p.name),
-                   nowMs: Int64(Date().timeIntervalSince1970 * 1000)
+                   nowMs: Int64(Date().timeIntervalSince1970 * 1000),
+                   fed: p.sessionFeed
                ) {
                 Text(line.text)
                     .font(.caption)

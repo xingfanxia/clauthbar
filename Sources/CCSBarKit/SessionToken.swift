@@ -96,9 +96,22 @@ enum SessionToken {
     /// The DetailCard line for a state, `nil` when there is nothing to show.
     /// Day-granular — the horizon is ~a year, and the stamp itself is the
     /// documented lifetime, not a server figure.
-    static func statusLine(_ state: SessionTokenState, nowMs: Int64) -> (text: String, tone: Tone)? {
+    ///
+    /// CLA-FEED (`fed`, from status.json `session_feed`): the daemon
+    /// re-stamps this sidecar from the usage chain on every rotation, so an
+    /// hours-scale expiry is routine maintenance — rendered as a calm
+    /// refresh countdown, never the mint's 30-day warning ramp. Expired
+    /// stays DANGER either way (a fed token past its stamp means the feeder
+    /// is dead — the honest countdown exists to expose exactly that), and a
+    /// mis-fill overrides the feed entirely.
+    static func statusLine(_ state: SessionTokenState, nowMs: Int64, fed: Bool = false) -> (text: String, tone: Tone)? {
         switch state {
         case .none:
+            if fed {
+                // Flag on, sidecar not yet armed — the next rotation (or a
+                // `clauth feed <p> on` re-run) feeds it.
+                return ("Session feed enabled · arming on next rotation", .warning)
+            }
             return nil
         case .misfilled:
             return (
@@ -106,12 +119,25 @@ enum SessionToken {
                 .danger
             )
         case .unstamped:
-            return ("Long-lived token · no recorded expiry", .normal)
+            return (fed ? "Fed token · no recorded expiry" : "Long-lived token · no recorded expiry", .normal)
         case .expires(let ms):
             // Gate expiry on the clock, not the truncated day count: integer
             // division reads a token expired <24h ago as `days == 0`, which
             // mislabeled it "~0d" instead of expired (same fix as clauth's).
             let days = (ms - nowMs) / 86_400_000
+            if fed {
+                if nowMs >= ms {
+                    return ("Feed stalled — fed token expired (daemon down or chain dead?)", .danger)
+                }
+                let hours = (ms - nowMs) / 3_600_000
+                if hours > 48 {
+                    // A mint-shaped horizon under the feed flag: the static
+                    // mint is still installed; the feed supersedes it on the
+                    // next rotation / switch.
+                    return ("Static mint · feed arms on next rotation", .normal)
+                }
+                return (hours < 1 ? "Fed token · refreshes in <1h" : "Fed token · refreshes in ~\(hours)h", .normal)
+            }
             if nowMs >= ms {
                 return ("Long-lived token expired — re-mint: claude setup-token", .danger)
             }
